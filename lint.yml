@@ -1,0 +1,157 @@
+name: Multilang Templates (référence, ne pas exécuter directement)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install black pylint
+      - run: black .
+      - run: pylint $(git ls-files '*.py') || true
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format: Python corrections" || echo "Aucun changement à commit"
+          git push origin HEAD:main
+
+  javascript_html_css:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --global prettier eslint stylelint
+      - run: prettier --write . || true
+      - run: eslint --fix . || true
+      - run: stylelint "**/*.{css,html}" --fix || true
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format: JS/HTML/CSS corrections" || echo "Aucun changement à commit"
+          git push origin HEAD:main
+
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - run: sudo apt-get update && sudo apt-get install -y clang-format cppcheck
+      - name: Format C/C++
+        run: |
+          shopt -s globstar nullglob
+          clang-format -i **/*.c **/*.cpp **/*.h || true
+      - run: cppcheck . || true
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format: C/C++ corrections" || echo "Aucun changement à commit"
+          git push origin HEAD:main
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+      - run: gofmt -w .
+      - run: go vet ./... || true
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format: Go corrections" || echo "Aucun changement à commit"
+          git push origin HEAD:main
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - run: cargo fmt || true
+      - run: cargo clippy -- -D warnings || true
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format: Rust corrections" || echo "Aucun changement à commit"
+          git push origin HEAD:main
+
+  java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Install google-java-format
+        run: |
+          wget -q https://github.com/google/google-java-format/releases/download/v1.17.0/google-java-format-1.17.0-all-deps.jar -O /usr/local/bin/google-java-format.jar
+      - name: AutoFix Java formatting
+        run: |
+          find . -name "*.java" -exec java -jar /usr/local/bin/google-java-format.jar -i {} + || true
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format: Java corrections" || echo "Aucun changement à commit"
+          git push origin HEAD:main
+
+  csharp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '7.0.x'
+      - name: Format C#
+        run: |
+          if find . -name "*.csproj" | grep -q .; then
+            dotnet format || true
+          fi
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format: C# corrections" || echo "Aucun changement à commit"
+          git push origin HEAD:main
