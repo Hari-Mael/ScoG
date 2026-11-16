@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cwchar>
 #include <cwctype>
 #include <fstream>
 #include <sstream>
