@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cwchar>
 #include <cwctype>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -412,7 +413,7 @@ void SaveData() {
     const wstring path = DataPath();
     const wstring tmp = path + L".tmp";
     {
-        ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        ofstream out(std::filesystem::path(tmp), std::ios::binary | std::ios::trunc);
         if (!out) return;
         for (const auto& e : gEleves)
             out << WideToUtf8(JoinRecord({ L"E", to_wstring(e.id), e.nom, e.classe, e.email, e.sexe, e.cycle })) << '\n';
@@ -432,7 +433,7 @@ void SaveData() {
 }
 
 void LoadData() {
-    ifstream in(DataPath(), std::ios::binary);
+    ifstream in(std::filesystem::path(DataPath()), std::ios::binary);
     if (!in) return;
     string raw;
     while (std::getline(in, raw)) {
