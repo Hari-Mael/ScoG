@@ -18,6 +18,8 @@
 #include <string>
 #include <vector>
 
+#include "ui_theme.h"
+
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "shell32.lib")
@@ -652,10 +654,40 @@ LRESULT CALLBACK LoginProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         gLoginPass = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 20, 102, 280, 26, hwnd, 0);
         SendMessageW(gLoginPass, EM_SETPASSWORDCHAR, kPasswordChar, 0);
         gPasswordHidden = true;
-        gLoginEye = CreateCtl(L"BUTTON", L"Voir", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 306, 102, 54, 26, hwnd, ID_EYE);
+        gLoginEye = CreateCtl(L"BUTTON", L"Voir", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 306, 102, 54, 26, hwnd, ID_EYE);
         gLoginMsg = CreateCtl(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 20, 140, 340, 36, hwnd, 0);
-        CreateCtl(L"BUTTON", L"Se connecter", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 20, 190, 340, 36, hwnd, ID_LOGIN);
+        CreateCtl(L"BUTTON", L"Se connecter", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 20, 190, 340, 36, hwnd, ID_LOGIN);
         return 0;
+    }
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        Gdiplus::Graphics g(hdc);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        const Gdiplus::RectF full(0.0f, 0.0f, static_cast<float>(rc.right), static_cast<float>(rc.bottom));
+        Gdiplus::LinearGradientBrush bg(full, Gdiplus::Color(255, 232, 238, 255),
+            Gdiplus::Color(255, 210, 222, 250), Gdiplus::LinearGradientModeVertical);
+        g.FillRectangle(&bg, full);
+        const Gdiplus::RectF card(12.0f, 12.0f, static_cast<float>(rc.right - 24), static_cast<float>(rc.bottom - 24));
+        ui::FillRoundRect(g, card, 14.0f, ui::palette::Card());
+        ui::StrokeRoundRect(g, card, 14.0f, ui::palette::Border());
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
+        return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+    }
+    case WM_DRAWITEM: {
+        auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        ui::DrawButton(item, item->CtlID == ID_LOGIN ? ui::ButtonKind::Primary : ui::ButtonKind::Secondary);
+        return TRUE;
     }
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
@@ -678,7 +710,7 @@ LRESULT CALLBACK LoginProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 bool RunLogin() {
     gLoggedIn = false;
     HWND h = CreateFixedWindow(L"GS_Login", L"Connexion - Gestion scolaire", 380, 250,
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, 0, nullptr, nullptr);
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN, 0, nullptr, nullptr);
     if (!h) return false;
     ShowWindow(h, SW_SHOW);
     SetFocus(gLoginUser);
@@ -910,7 +942,7 @@ void CreateMainControls(HWND hwnd) {
     gMenuBtns.clear();
     gActionBtns.clear();
 
-    gToggle = CreateCtl(L"BUTTON", L"\u22EE", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, ID_TOGGLE);
+    gToggle = CreateCtl(L"BUTTON", L"\u22EE", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_TOGGLE);
     gTitle = CreateCtl(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, 0);
     gTopLabel = CreateCtl(L"STATIC", L"Etablissement", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, 0);
     gTopCycle = CreateCtl(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 0, 0, 0, 0, hwnd, ID_CYCLE);
@@ -918,23 +950,23 @@ void CreateMainControls(HWND hwnd) {
     SendMessageW(gTopCycle, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Collège"));
     SendMessageW(gTopCycle, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Lycée"));
     SendMessageW(gTopCycle, CB_SETCURSEL, static_cast<WPARAM>(CycleIndex()), 0);
-    gHome = CreateCtl(L"BUTTON", L"Accueil", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, ID_HOME);
+    gHome = CreateCtl(L"BUTTON", L"Accueil", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_HOME);
     gBell = CreateCtl(L"STATIC", L"\U0001F514", WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 0, 0, 0, hwnd, 0);
-    gAdminBtn = CreateCtl(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, ID_ADMIN);
+    gAdminBtn = CreateCtl(L"BUTTON", L"", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_ADMIN);
     UpdateAdminLabel();
 
     for (int i = 0; i < kPageCount; ++i) {
-        gMenuBtns.push_back(CreateCtl(L"BUTTON", kPages[i].label, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        gMenuBtns.push_back(CreateCtl(L"BUTTON", kPages[i].label, WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
             0, 0, 0, 0, hwnd, ID_MENU_BASE + i));
     }
-    gLogout = CreateCtl(L"BUTTON", L"Deconnexion", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, ID_LOGOUT);
+    gLogout = CreateCtl(L"BUTTON", L"Deconnexion", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_LOGOUT);
 
     gContent = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL |
         ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 0, 0, 0, 0, hwnd, 0);
 
     const wchar_t* actions[] = { L"+ Nouvel eleve", L"+ Nouvelle classe", L"+ Nouvelle demande", L"Parametres" };
     for (int i = 0; i < 4; ++i) {
-        gActionBtns.push_back(CreateCtl(L"BUTTON", actions[i], WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        gActionBtns.push_back(CreateCtl(L"BUTTON", actions[i], WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
             0, 0, 0, 0, hwnd, ID_ACT_ELEVE + i));
     }
 }
@@ -1025,6 +1057,52 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         LayoutMain(hwnd);
         RefreshContent();
         return 0;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        Gdiplus::Graphics g(hdc);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        const float w = static_cast<float>(rc.right);
+        const float h = static_cast<float>(rc.bottom);
+        Gdiplus::SolidBrush background(ui::palette::Background());
+        g.FillRectangle(&background, 0.0f, 0.0f, w, h);
+        Gdiplus::SolidBrush topbar(ui::palette::Card());
+        g.FillRectangle(&topbar, 0.0f, 0.0f, w, static_cast<float>(kTopbarHeight));
+        Gdiplus::Pen separator(ui::palette::Border());
+        g.DrawLine(&separator, 0.0f, static_cast<float>(kTopbarHeight), w, static_cast<float>(kTopbarHeight));
+        if (gSidebarVisible) {
+            Gdiplus::SolidBrush sidebar(ui::palette::Sidebar());
+            g.FillRectangle(&sidebar, 0.0f, static_cast<float>(kTopbarHeight), static_cast<float>(kSidebarWidth),
+                h - static_cast<float>(kTopbarHeight));
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
+        return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+    }
+    case WM_DRAWITEM: {
+        auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (item->CtlType != ODT_BUTTON) break;
+        const int id = static_cast<int>(item->CtlID);
+        ui::ButtonKind kind = ui::ButtonKind::Secondary;
+        if (id >= ID_MENU_BASE && id < ID_MENU_BASE + kPageCount) {
+            kind = (kPages[id - ID_MENU_BASE].key == gCurrentPage) ? ui::ButtonKind::NavActive : ui::ButtonKind::Nav;
+        } else if (id == ID_LOGOUT) {
+            kind = ui::ButtonKind::Nav;
+        } else if (id == ID_ACT_ELEVE || id == ID_ACT_CLASSE || id == ID_ACT_PAIEMENT || id == ID_ACT_PARAMS) {
+            kind = ui::ButtonKind::Primary;
+        }
+        ui::DrawButton(item, kind);
+        return TRUE;
+    }
     case WM_SIZE:
         LayoutMain(hwnd);
         return 0;
@@ -1047,6 +1125,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES };
     InitCommonControlsEx(&icc);
     gInstance = hInstance;
+    ui::GdiplusSession gdiplusSession;
 
     gFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
@@ -1063,7 +1142,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
     if (EnsureAccount(nullptr)) {
         while (RunLogin()) {
-            gMain = CreateWindowExW(0, L"GS_Main", L"Gestion scolaire", WS_OVERLAPPEDWINDOW,
+            gMain = CreateWindowExW(0, L"GS_Main", L"Gestion scolaire", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                 CW_USEDEFAULT, CW_USEDEFAULT, 1100, 820, nullptr, nullptr, gInstance, nullptr);
             if (!gMain) break;
             ShowWindow(gMain, SW_SHOW);
