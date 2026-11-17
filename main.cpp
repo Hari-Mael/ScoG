@@ -854,7 +854,7 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width) {
         to_wstring(nbEleves), L"eleve(s) dans le cycle", ui::palette::Accent());
     DrawKpiCard(g, Gdiplus::RectF(x + (cardW + gap), cardY, cardW, cardH), L"Classes",
         to_wstring(nbClasses), L"classe(s) configurees", ui::palette::Success());
-    DrawKpiCard(g, Gdiplus::RectF(x + 2.0f * (cardW + gap), cardY, cardW, cardH), L"Demandes de paiement",
+    DrawKpiCard(g, Gdiplus::RectF(x + 2.0f * (cardW + gap), cardY, cardW, cardH), L"Paiements",
         to_wstring(nbPaiements), L"demande(s) enregistree(s)", ui::palette::Warning());
     DrawKpiCard(g, Gdiplus::RectF(x + 3.0f * (cardW + gap), cardY, cardW, cardH), L"Reste a percevoir",
         to_wstring(reste) + L" " + gS.devise, L"montant restant du", ui::palette::Danger());
@@ -1173,9 +1173,10 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
             return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
         }
-        SetBkMode(hdc, TRANSPARENT);
+        SetBkMode(hdc, OPAQUE);
+        SetBkColor(hdc, RGB(255, 255, 255));
         SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
-        return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
     }
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
