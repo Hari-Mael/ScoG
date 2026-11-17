@@ -1009,7 +1009,7 @@ void BuildBackdrop(int w, int h) {
 }
 
 bool IsDataPage() {
-    return gCurrentPage == L"eleves" || gCurrentPage == L"classes" || gCurrentPage == L"paiements";
+    return gCurrentPage != L"dashboard";
 }
 
 struct TableColumn {
@@ -1018,8 +1018,12 @@ struct TableColumn {
 };
 
 Gdiplus::Color StatusColor(const wstring& status) {
-    if (status == L"Paye") return ui::palette::Success();
-    if (status == L"Impaye") return ui::palette::Warning();
+    if (status == L"Paye" || status == L"Actif" || status == L"Valide" || status == L"Inscrit" || status == L"Oui")
+        return ui::palette::Success();
+    if (status == L"Impaye" || status == L"En attente" || status == L"Partiel")
+        return ui::palette::Warning();
+    if (status == L"Inactif" || status == L"Refuse" || status == L"Absent")
+        return ui::palette::Danger();
     return ui::palette::TextMuted();
 }
 
@@ -1059,7 +1063,7 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
     g.DrawLine(&headerLine, x + 16.0f, y + headerH, x + w - 16.0f, y + headerH);
 
     if (rows.empty()) {
-        ui::DrawUiText(g, L"Aucune donnee pour ce cycle.",
+        ui::DrawUiText(g, L"Aucune donnee pour ce module.",
             Gdiplus::RectF(x + 16.0f, y + headerH + 16.0f, w - 32.0f, 22.0f), 14.0f, Fade(ui::palette::TextMuted(), frameA));
         return;
     }
@@ -1082,12 +1086,13 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
             g.FillRectangle(&alt, x + 1.0f, rowY, w - 2.0f, rowH);
         }
         for (size_t i = 0; i < cols.size() && i < rows[r].size(); ++i) {
+            const Gdiplus::RectF cell(xs[i], rowY + 6.0f, widths[i] - 8.0f, rowH - 10.0f);
             if (static_cast<int>(i) == statusCol) {
                 DrawStatusPill(g, xs[i], rowY + 8.0f, rows[r][i], ra);
+            } else if (wcscmp(cols[i].title, L"Actions") == 0) {
+                ui::DrawUiText(g, L"Voir    Modifier    Supprimer", cell, 13.0f, Fade(ui::palette::Accent(), ra));
             } else {
-                ui::DrawUiText(g, rows[r][i].c_str(),
-                    Gdiplus::RectF(xs[i], rowY + 6.0f, widths[i] - 8.0f, rowH - 10.0f),
-                    13.0f, Fade(ui::palette::TextMain(), ra));
+                ui::DrawUiText(g, rows[r][i].c_str(), cell, 13.0f, Fade(ui::palette::TextMain(), ra));
             }
         }
     }
@@ -1098,6 +1103,110 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
     }
 }
 
+void BuildModule(const wstring& key, vector<TableColumn>& cols, vector<vector<wstring>>& rows) {
+    const TableColumn actions{ L"Actions", 1.6f };
+    const wstring devise = gS.devise;
+    const wstring cycleName = CycleLabel(gCycle);
+
+    if (key == L"eleves") {
+        cols = { {L"ID", 0.8f}, {L"Nom", 2.2f}, {L"Classe", 1.2f}, {L"Email", 2.4f}, {L"Sexe", 0.8f}, actions };
+        for (const auto& e : gEleves) {
+            if (e.cycle != gCycle) continue;
+            rows.push_back({ to_wstring(e.id), e.nom, e.classe, e.email, e.sexe });
+        }
+    } else if (key == L"classes") {
+        cols = { {L"ID", 0.8f}, {L"Classe", 1.5f}, {L"Annee", 1.5f}, {L"Effectif", 1.2f}, actions };
+        for (const auto& c : gClasses) {
+            if (c.cycle != gCycle) continue;
+            rows.push_back({ to_wstring(c.id), c.nom, c.annee, to_wstring(CountElevesInClasse(c.nom)) });
+        }
+    } else if (key == L"paiements") {
+        cols = { {L"Reference", 1.6f}, {L"Eleve", 2.0f}, {L"Classe", 1.0f}, {L"Type", 1.4f},
+                 {L"Montant", 1.2f}, {L"Reste", 1.2f}, {L"Statut", 1.2f}, actions };
+        for (const auto& p : gPaiements) {
+            if (p.cycle != gCycle) continue;
+            rows.push_back({ p.ref, p.eleve, p.classe, p.type,
+                to_wstring(p.montant) + L" " + devise, to_wstring(p.reste) + L" " + devise, p.statut });
+        }
+    } else if (key == L"portal" || key == L"users") {
+        cols = { {L"Identifiant", 1.8f}, {L"Role", 1.6f}, {L"Statut", 1.2f}, actions };
+        if (HasAccount()) rows.push_back({ gS.adminUser, L"Super Admin", L"Actif" });
+    } else if (key == L"cycles") {
+        cols = { {L"Code", 0.8f}, {L"Nom", 1.8f}, {L"Ordre", 0.8f}, {L"Niveaux", 1.2f}, actions };
+        rows.push_back({ L"ECO", L"Ecole", L"1", to_wstring(SplitComma(gS.classesEcole).size()) });
+        rows.push_back({ L"COL", L"College", L"2", to_wstring(SplitComma(gS.classesCollege).size()) });
+        rows.push_back({ L"LYC", L"Lycee", L"3", to_wstring(SplitComma(gS.classesLycee).size()) });
+    } else if (key == L"niveaux") {
+        cols = { {L"Niveau", 1.8f}, {L"Cycle", 1.4f}, {L"Effectif", 1.2f}, actions };
+        const vector<wstring> cyc = { L"ecole", L"college", L"lycee" };
+        for (const auto& c : cyc) {
+            for (const auto& niveau : ClassesForCycle(c)) {
+                long long n = 0;
+                for (const auto& e : gEleves) if (e.cycle == c && e.classe == niveau) ++n;
+                rows.push_back({ niveau, CycleLabel(c), to_wstring(n) });
+            }
+        }
+    } else if (key == L"salles") {
+        cols = { {L"Code", 0.8f}, {L"Nom", 2.0f}, {L"Capacite", 1.2f}, {L"Type", 1.4f}, actions };
+    } else if (key == L"periodes") {
+        cols = { {L"Periode", 2.0f}, {L"Debut", 1.4f}, {L"Fin", 1.4f}, {L"Statut", 1.2f}, actions };
+    } else if (key == L"calendrier") {
+        cols = { {L"Evenement", 2.4f}, {L"Date", 1.4f}, {L"Type", 1.4f}, {L"Statut", 1.2f}, actions };
+    } else if (key == L"inscriptions") {
+        cols = { {L"Eleve", 2.2f}, {L"Classe", 1.2f}, {L"Cycle", 1.2f}, {L"Statut", 1.2f}, actions };
+        for (const auto& e : gEleves) {
+            if (e.cycle != gCycle) continue;
+            rows.push_back({ e.nom, e.classe, cycleName, L"Inscrit" });
+        }
+    } else if (key == L"parents") {
+        cols = { {L"Nom", 2.0f}, {L"Lien", 1.2f}, {L"Telephone", 1.4f}, {L"Eleve", 2.0f}, actions };
+    } else if (key == L"presences") {
+        cols = { {L"Eleve", 2.2f}, {L"Classe", 1.2f}, {L"Date", 1.2f}, {L"Statut", 1.2f}, actions };
+    } else if (key == L"discipline") {
+        cols = { {L"Eleve", 2.2f}, {L"Date", 1.2f}, {L"Motif", 2.0f}, {L"Statut", 1.2f}, actions };
+    } else if (key == L"finance") {
+        cols = { {L"Libelle", 2.0f}, {L"Montant", 1.4f}, {L"Encaisse", 1.4f}, {L"Statut", 1.2f}, actions };
+        for (const auto& p : gPaiements) {
+            if (p.cycle != gCycle) continue;
+            rows.push_back({ p.type, to_wstring(p.montant) + L" " + devise,
+                to_wstring(p.montant - p.reste) + L" " + devise, p.statut });
+        }
+    } else if (key == L"etats") {
+        cols = { {L"Rapport", 2.2f}, {L"Periode", 1.4f}, {L"Format", 1.0f}, {L"Date", 1.4f}, actions };
+    } else if (key == L"typesFrais") {
+        cols = { {L"Code", 0.8f}, {L"Libelle", 2.0f}, {L"Montant", 1.4f}, {L"Periodicite", 1.4f}, actions };
+    } else if (key == L"carte") {
+        cols = { {L"Eleve", 2.2f}, {L"Classe", 1.2f}, {L"Matricule", 1.4f}, {L"Statut", 1.2f}, actions };
+        for (const auto& e : gEleves) {
+            if (e.cycle != gCycle) continue;
+            rows.push_back({ e.nom, e.classe, gS.matricule, L"Actif" });
+        }
+    } else if (key == L"certificats") {
+        cols = { {L"Eleve", 2.0f}, {L"Type", 1.6f}, {L"Date", 1.2f}, {L"Statut", 1.2f}, actions };
+    } else if (key == L"parametres") {
+        cols = { {L"Champ", 2.4f}, {L"Valeur", 3.0f}, actions };
+        rows.push_back({ L"Nom du logiciel", gS.appName });
+        rows.push_back({ L"Logo", gS.appLogo });
+        rows.push_back({ L"Etablissement", gS.ecole });
+        rows.push_back({ L"Matricule", gS.matricule });
+        rows.push_back({ L"Regime", gS.regime });
+        rows.push_back({ L"Devise", gS.devise });
+        rows.push_back({ L"Classes Ecole", gS.classesEcole });
+        rows.push_back({ L"Classes College", gS.classesCollege });
+        rows.push_back({ L"Classes Lycee", gS.classesLycee });
+    } else {
+        cols = { {L"Nom", 2.0f}, actions };
+    }
+}
+
+int HeaderActionFor(const wstring& page) {
+    if (page == L"eleves") return ID_ACT_ELEVE;
+    if (page == L"classes") return ID_ACT_CLASSE;
+    if (page == L"paiements") return ID_ACT_PAIEMENT;
+    if (page == L"parametres") return ID_ACT_PARAMS;
+    return 0;
+}
+
 void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom, ULONGLONG now) {
     const float x = static_cast<float>(left);
     const float y = static_cast<float>(top);
@@ -1105,33 +1214,10 @@ void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom
 
     vector<TableColumn> cols;
     vector<vector<wstring>> rows;
+    BuildModule(gCurrentPage, cols, rows);
     int statusCol = -1;
-
-    if (gCurrentPage == L"eleves") {
-        cols = { TableColumn{L"ID", 0.8f}, TableColumn{L"Nom", 2.2f}, TableColumn{L"Classe", 1.2f},
-                 TableColumn{L"Email", 2.4f}, TableColumn{L"Sexe", 0.8f} };
-        for (const auto& e : gEleves) {
-            if (e.cycle != gCycle) continue;
-            rows.push_back({ to_wstring(e.id), e.nom, e.classe, e.email, e.sexe });
-        }
-    } else if (gCurrentPage == L"classes") {
-        cols = { TableColumn{L"ID", 0.8f}, TableColumn{L"Classe", 1.5f},
-                 TableColumn{L"Annee", 1.5f}, TableColumn{L"Effectif", 1.2f} };
-        for (const auto& c : gClasses) {
-            if (c.cycle != gCycle) continue;
-            rows.push_back({ to_wstring(c.id), c.nom, c.annee, to_wstring(CountElevesInClasse(c.nom)) });
-        }
-    } else {
-        cols = { TableColumn{L"Reference", 1.6f}, TableColumn{L"Eleve", 2.0f}, TableColumn{L"Classe", 1.0f},
-                 TableColumn{L"Type", 1.4f}, TableColumn{L"Montant", 1.2f}, TableColumn{L"Reste", 1.2f},
-                 TableColumn{L"Statut", 1.2f} };
-        statusCol = 6;
-        for (const auto& p : gPaiements) {
-            if (p.cycle != gCycle) continue;
-            rows.push_back({ p.ref, p.eleve, p.classe, p.type,
-                to_wstring(p.montant) + L" " + gS.devise,
-                to_wstring(p.reste) + L" " + gS.devise, p.statut });
-        }
+    for (size_t i = 0; i < cols.size(); ++i) {
+        if (wcscmp(cols[i].title, L"Statut") == 0) statusCol = static_cast<int>(i);
     }
 
     const float bandA = Stage(now, 0.0f, 450.0f);
@@ -1140,9 +1226,9 @@ void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom
     const wstring count = to_wstring(rows.size()) + L" element(s) - Cycle : " + CycleLabel(gCycle);
     FillGradientRoundRect(g, Gdiplus::RectF(x, y, w, 72.0f), 14.0f,
         Fade(Gdiplus::Color(255, 37, 99, 235), bandA), Fade(Gdiplus::Color(255, 96, 165, 250), bandA));
-    ui::DrawUiText(g, title.c_str(), Gdiplus::RectF(x + 24.0f, y + 12.0f, w - 48.0f, 30.0f),
+    ui::DrawUiText(g, title.c_str(), Gdiplus::RectF(x + 24.0f, y + 12.0f, w - 240.0f, 30.0f),
         22.0f, Fade(ui::palette::White(), bandA), true);
-    ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + 24.0f, y + 42.0f, w - 48.0f, 20.0f),
+    ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + 24.0f, y + 42.0f, w - 240.0f, 20.0f),
         14.0f, Fade(Gdiplus::Color(255, 240, 232, 255), bandA));
 
     const float filterY = y + 84.0f;
@@ -1273,11 +1359,14 @@ void RedrawChrome() {
     if (gAdminBtn) InvalidateRect(gAdminBtn, nullptr, TRUE);
 }
 
+void LayoutMain(HWND hwnd);
+
 void RefreshContent() {
     SetWindowTextW(gTitle, PageLabel(gCurrentPage).c_str());
     SetWindowTextW(gContent, BuildPageText().c_str());
     const bool custom = (gCurrentPage == L"dashboard") || IsDataPage();
     if (gContent) ShowWindow(gContent, custom ? SW_HIDE : SW_SHOW);
+    if (gMain) LayoutMain(gMain);
     RedrawChrome();
     StartAnim();
 }
@@ -1471,10 +1560,21 @@ void LayoutMain(HWND hwnd) {
     const int contentTop = kTopbarHeight + 8;
     const int actionsY = height - 44;
     MoveWindow(gContent, left, contentTop, width - left - kMargin, actionsY - contentTop - kMargin, TRUE);
+    const bool dash = gCurrentPage == L"dashboard";
+    const int headerAction = HeaderActionFor(gCurrentPage);
     int x = left;
     for (HWND b : gActionBtns) {
-        MoveWindow(b, x, actionsY, kActionButtonWidth, 32, TRUE);
-        x += kActionSpacing;
+        const int id = GetDlgCtrlID(b);
+        if (dash) {
+            ShowWindow(b, SW_SHOW);
+            MoveWindow(b, x, actionsY, kActionButtonWidth, 32, TRUE);
+            x += kActionSpacing;
+        } else if (id == headerAction) {
+            ShowWindow(b, SW_SHOW);
+            MoveWindow(b, width - kMargin - 190, kTopbarHeight + 8 + 20, 180, 32, TRUE);
+        } else {
+            ShowWindow(b, SW_HIDE);
+        }
     }
     InvalidateRect(hwnd, nullptr, TRUE);
     RedrawChrome();
