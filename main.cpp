@@ -1084,6 +1084,11 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     case WM_CTLCOLORSTATIC: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
+        if (reinterpret_cast<HWND>(lParam) == gContent) {
+            SetBkColor(hdc, RGB(255, 255, 255));
+            SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
+            return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
+        }
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
         return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
@@ -1105,6 +1110,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     case WM_SIZE:
         LayoutMain(hwnd);
+        InvalidateRect(hwnd, nullptr, TRUE);
         return 0;
     case WM_GETMINMAXINFO:
         reinterpret_cast<MINMAXINFO*>(lParam)->ptMinTrackSize = POINT{ 1024, 780 };
