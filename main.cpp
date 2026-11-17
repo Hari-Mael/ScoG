@@ -40,7 +40,7 @@ constexpr int kTopbarHeight = 48;
 constexpr int kMargin = 10;
 constexpr int kActionButtonWidth = 150;
 constexpr int kActionSpacing = 160;
-constexpr int kFieldSpacing = 56;
+constexpr int kFieldSpacing = 66;
 constexpr DWORD kPbkdfIterations = 200000;
 constexpr size_t kMinPasswordLength = 8;
 constexpr int kMaxLoginAttempts = 5;
@@ -109,6 +109,7 @@ struct DlgField {
     wstring label;
     wstring value;
     bool password;
+    vector<wstring> options;
 };
 
 struct DialogState {
@@ -535,24 +536,79 @@ void PumpUntilClosed(HWND window, int enterId, int escId) {
     }
 }
 
+int FieldY(size_t i) {
+    return 22 + static_cast<int>(i) * kFieldSpacing;
+}
+
 LRESULT CALLBACK InputDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_CREATE: {
         auto* st = static_cast<DialogState*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(st));
-        int y = 16;
         for (size_t i = 0; i < st->fields->size(); ++i) {
             const DlgField& f = (*st->fields)[i];
-            CreateCtl(L"STATIC", f.label.c_str(), WS_CHILD | WS_VISIBLE, 20, y, 340, 18, hwnd, 0);
-            DWORD style = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL;
-            if (f.password) style |= ES_PASSWORD;
-            HWND edit = CreateCtl(L"EDIT", f.value.c_str(), style, 20, y + 20, 340, 26, hwnd, ID_FIELD_BASE + static_cast<int>(i));
-            if (f.password && edit) SendMessageW(edit, EM_SETPASSWORDCHAR, kPasswordChar, 0);
-            y += kFieldSpacing;
+            const int y = FieldY(i);
+            const int id = ID_FIELD_BASE + static_cast<int>(i);
+            CreateCtl(L"STATIC", f.label.c_str(), WS_CHILD | WS_VISIBLE, 24, y, 332, 18, hwnd, 0);
+            if (!f.options.empty()) {
+                HWND combo = CreateCtl(L"COMBOBOX", L"",
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+                    28, y + 26, 324, 200, hwnd, id);
+                int sel = 0;
+                for (size_t k = 0; k < f.options.size(); ++k) {
+                    SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(f.options[k].c_str()));
+                    if (f.options[k] == f.value) sel = static_cast<int>(k);
+                }
+                SendMessageW(combo, CB_SETCURSEL, sel, 0);
+            } else {
+                DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
+                if (f.password) style |= ES_PASSWORD;
+                HWND edit = CreateCtl(L"EDIT", f.value.c_str(), style, 30, y + 29, 320, 22, hwnd, id);
+                if (f.password && edit) SendMessageW(edit, EM_SETPASSWORDCHAR, kPasswordChar, 0);
+            }
         }
-        CreateCtl(L"BUTTON", L"Enregistrer", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 120, y, 110, 32, hwnd, IDOK);
-        CreateCtl(L"BUTTON", L"Annuler", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 240, y, 110, 32, hwnd, IDCANCEL);
+        const int by = FieldY(st->fields->size());
+        CreateCtl(L"BUTTON", L"Enregistrer", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+            150, by, 120, 36, hwnd, IDOK);
+        CreateCtl(L"BUTTON", L"Annuler", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+            280, by, 100, 36, hwnd, IDCANCEL);
         return 0;
+    }
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        Gdiplus::Graphics g(hdc);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        Gdiplus::SolidBrush bg(ui::palette::Background());
+        g.FillRectangle(&bg, 0.0f, 0.0f, static_cast<float>(rc.right), static_cast<float>(rc.bottom));
+        const Gdiplus::RectF card(10.0f, 10.0f, static_cast<float>(rc.right - 20), static_cast<float>(rc.bottom - 20));
+        ui::FillRoundRect(g, card, 14.0f, ui::palette::Card());
+        ui::StrokeRoundRect(g, card, 14.0f, ui::palette::Border());
+        const auto* st = reinterpret_cast<const DialogState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        if (st) {
+            for (size_t i = 0; i < st->fields->size(); ++i) {
+                const Gdiplus::RectF box(24.0f, static_cast<float>(FieldY(i) + 24), 332.0f, 34.0f);
+                ui::FillRoundRect(g, box, 8.0f, ui::palette::Card());
+                ui::StrokeRoundRect(g, box, 8.0f, ui::palette::Border());
+            }
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
+        return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+    }
+    case WM_DRAWITEM: {
+        auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        ui::DrawButton(item, item->CtlID == IDOK ? ui::ButtonKind::Primary : ui::ButtonKind::Secondary);
+        return TRUE;
     }
     case WM_COMMAND: {
         auto* st = reinterpret_cast<DialogState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -576,12 +632,13 @@ LRESULT CALLBACK InputDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 
 bool InputDialog(HWND owner, LPCWSTR title, vector<DlgField>& fields) {
     DialogState st{ &fields, false };
-    const int clientH = 16 + static_cast<int>(fields.size()) * kFieldSpacing + 32 + 16;
+    const int clientH = FieldY(fields.size()) + 36 + 20;
     HWND dlg = CreateFixedWindow(L"GS_Dialog", title, 380, clientH,
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, WS_EX_DLGMODALFRAME, owner, &st);
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN, WS_EX_DLGMODALFRAME, owner, &st);
     if (!dlg) return false;
     if (owner) EnableWindow(owner, FALSE);
     ShowWindow(dlg, SW_SHOW);
+    UpdateWindow(dlg);
     SetFocus(GetDlgItem(dlg, ID_FIELD_BASE));
     PumpUntilClosed(dlg, IDOK, IDCANCEL);
     if (owner) {
@@ -1050,10 +1107,10 @@ void AddEleve(HWND owner) {
         return;
     }
     vector<DlgField> fields{
-        { L"Nom complet", L"", false },
-        { L"Email", L"", false },
-        { L"Sexe (M / F)", L"", false },
-        { L"Classe (" + JoinList(classes, L", ") + L")", classes.front(), false }
+        DlgField{ L"Nom complet", L"", false, {} },
+        DlgField{ L"Email", L"", false, {} },
+        DlgField{ L"Sexe", L"M", false, { L"M", L"F" } },
+        DlgField{ L"Classe", classes.front(), false, classes }
     };
     if (!InputDialog(owner, L"Nouvel eleve", fields)) return;
 
@@ -1095,11 +1152,18 @@ void AddClasse(HWND owner) {
 }
 
 void AddPaiement(HWND owner) {
+    vector<wstring> names;
+    for (const auto& e : gEleves) if (e.cycle == gCycle) names.push_back(e.nom);
+    if (names.empty()) {
+        ShowWarning(owner, L"Aucun eleve dans ce cycle. Ajoutez d'abord un eleve.");
+        return;
+    }
     vector<DlgField> fields{
-        { L"Reference (ex : GPA-2026-001)", L"", false },
-        { L"Nom de l'eleve", L"", false },
-        { L"Type de frais", L"Inscription", false },
-        { L"Montant", L"", false }
+        DlgField{ L"Reference (ex : GPA-2026-001)", L"", false, {} },
+        DlgField{ L"Eleve", names.front(), false, names },
+        DlgField{ L"Type de frais", L"Inscription", false,
+            { L"Inscription", L"Scolarite", L"Cantine", L"Transport", L"Autre" } },
+        DlgField{ L"Montant (entier)", L"", false, {} }
     };
     if (!InputDialog(owner, L"Nouvelle demande de paiement", fields)) return;
 
