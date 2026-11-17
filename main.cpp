@@ -814,6 +814,7 @@ wstring BuildPageText() {
 void RefreshContent() {
     SetWindowTextW(gTitle, PageLabel(gCurrentPage).c_str());
     SetWindowTextW(gContent, BuildPageText().c_str());
+    if (gMain) InvalidateRect(gMain, nullptr, TRUE);
 }
 
 void UpdateWindowTitle() {
@@ -1099,7 +1100,8 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         const int id = static_cast<int>(item->CtlID);
         ui::ButtonKind kind = ui::ButtonKind::Secondary;
         if (id >= ID_MENU_BASE && id < ID_MENU_BASE + kPageCount) {
-            kind = (kPages[id - ID_MENU_BASE].key == gCurrentPage) ? ui::ButtonKind::NavActive : ui::ButtonKind::Nav;
+            const std::wstring key(kPages[id - ID_MENU_BASE].key);
+            kind = (key == gCurrentPage) ? ui::ButtonKind::NavActive : ui::ButtonKind::Nav;
         } else if (id == ID_LOGOUT) {
             kind = ui::ButtonKind::Nav;
         } else if (id == ID_ACT_ELEVE || id == ID_ACT_CLASSE || id == ID_ACT_PAIEMENT || id == ID_ACT_PARAMS) {
