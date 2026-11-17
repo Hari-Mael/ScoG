@@ -1748,7 +1748,11 @@ struct MenuSlot {
 struct SectionLabel {
     int y;
     wstring text;
+    int sec;
 };
+
+bool gSectionOpen[4] = { false, false, false, false };
+
 
 const MenuSlot kMenu[] = {
     { nullptr, 0 },
@@ -1764,6 +1768,18 @@ const MenuSlot kMenu[] = {
 };
 
 vector<SectionLabel> gSections;
+void OpenSectionOfPage(int page) {
+    int sec = -1;
+    for (const auto& slot : kMenu) {
+        if (slot.header) {
+            ++sec;
+        } else if (slot.page == page) {
+            if (sec >= 0) gSectionOpen[sec] = true;
+            return;
+        }
+    }
+}
+
 
 void LayoutMain(HWND hwnd) {
     RECT rc;
@@ -1783,15 +1799,22 @@ void LayoutMain(HWND hwnd) {
     const bool show = gSidebarVisible;
     gSections.clear();
     int menuY = kTopbarHeight + 8;
+    int sec = -1;
+    bool open = true;
     for (const auto& slot : kMenu) {
         if (slot.header) {
-            gSections.push_back(SectionLabel{ menuY + 4, slot.header });
-            menuY += 24;
+            ++sec;
+            open = gSectionOpen[sec];
+            gSections.push_back(SectionLabel{ menuY, slot.header, sec });
+            menuY += 26;
         } else {
             HWND b = gMenuBtns[static_cast<size_t>(slot.page)];
-            ShowWindow(b, show ? SW_SHOW : SW_HIDE);
-            MoveWindow(b, 10, menuY, kSidebarWidth - 20, 24, TRUE);
-            menuY += 26;
+            const bool visible = show && open;
+            ShowWindow(b, visible ? SW_SHOW : SW_HIDE);
+            if (visible) {
+                MoveWindow(b, 10, menuY, kSidebarWidth - 20, 24, TRUE);
+                menuY += 26;
+            }
         }
     }
     ShowWindow(gLogout, show ? SW_SHOW : SW_HIDE);
@@ -1873,6 +1896,8 @@ void OnCommand(HWND hwnd, int id, int code) {
     }
     if (id >= ID_MENU_BASE && id < ID_MENU_BASE + kPageCount) {
         gCurrentPage = kPages[id - ID_MENU_BASE].key;
+        OpenSectionOfPage(id - ID_MENU_BASE);
+        LayoutMain(hwnd);
         SetWindowTextW(gSearch, L"");
         gQuery.clear();
         if (gCurrentPage == L"parametres") OpenParams(hwnd);
@@ -1934,8 +1959,12 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         if (gSidebarVisible) {
             for (const auto& s : gSections) {
-                ui::DrawUiText(g, s.text.c_str(), Gdiplus::RectF(18.0f, static_cast<float>(s.y), 200.0f, 18.0f),
+                const float ty = static_cast<float>(s.y + 4);
+                ui::DrawUiText(g, s.text.c_str(), Gdiplus::RectF(18.0f, ty, 180.0f, 18.0f),
                     11.0f, Gdiplus::Color(255, 148, 163, 184), true);
+                ui::DrawUiText(g, gSectionOpen[s.sec] ? L"\u25BE" : L"\u25B8",
+                    Gdiplus::RectF(static_cast<float>(kSidebarWidth - 34), ty, 20.0f, 18.0f),
+                    12.0f, Gdiplus::Color(255, 148, 163, 184), false, true);
             }
         }
         if (gCurrentPage == L"dashboard") {
@@ -2013,6 +2042,20 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         return 0;
     case WM_LBUTTONDOWN: {
+        {
+            const int hx = static_cast<short>(LOWORD(lParam));
+            const int hy = static_cast<short>(HIWORD(lParam));
+            if (gSidebarVisible && hx >= 10 && hx < kSidebarWidth - 10) {
+                for (const auto& s : gSections) {
+                    if (hy >= s.y && hy < s.y + 24) {
+                        gSectionOpen[s.sec] = !gSectionOpen[s.sec];
+                        LayoutMain(hwnd);
+                        RedrawChrome();
+                        return 0;
+                    }
+                }
+            }
+        }
         if (!IsDataPage()) return 0;
         const int mx = static_cast<short>(LOWORD(lParam));
         const int my = static_cast<short>(HIWORD(lParam));
