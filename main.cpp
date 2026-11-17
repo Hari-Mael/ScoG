@@ -1740,6 +1740,31 @@ void CreateMainControls(HWND hwnd) {
     }
 }
 
+struct MenuSlot {
+    const wchar_t* header;
+    int page;
+};
+
+struct SectionLabel {
+    int y;
+    wstring text;
+};
+
+const MenuSlot kMenu[] = {
+    { nullptr, 0 },
+    { L"Pedagogie", -1 },
+    { nullptr, 2 }, { nullptr, 3 }, { nullptr, 5 }, { nullptr, 7 },
+    { nullptr, 8 }, { nullptr, 9 }, { nullptr, 11 },
+    { L"Finance", -1 },
+    { nullptr, 13 }, { nullptr, 14 }, { nullptr, 15 }, { nullptr, 16 },
+    { L"Documents officiels", -1 },
+    { nullptr, 17 }, { nullptr, 18 }, { nullptr, 12 },
+    { L"Administration", -1 },
+    { nullptr, 1 }, { nullptr, 4 }, { nullptr, 6 }, { nullptr, 10 }, { nullptr, 19 }, { nullptr, 20 }
+};
+
+vector<SectionLabel> gSections;
+
 void LayoutMain(HWND hwnd) {
     RECT rc;
     GetClientRect(hwnd, &rc);
@@ -1756,9 +1781,18 @@ void LayoutMain(HWND hwnd) {
     MoveWindow(gAdminBtn, width - 210, 8, 200, 32, TRUE);
 
     const bool show = gSidebarVisible;
-    for (size_t i = 0; i < gMenuBtns.size(); ++i) {
-        ShowWindow(gMenuBtns[i], show ? SW_SHOW : SW_HIDE);
-        MoveWindow(gMenuBtns[i], 10, kTopbarHeight + 8 + static_cast<int>(i) * 30, kSidebarWidth - 20, 26, TRUE);
+    gSections.clear();
+    int menuY = kTopbarHeight + 8;
+    for (const auto& slot : kMenu) {
+        if (slot.header) {
+            gSections.push_back(SectionLabel{ menuY + 4, slot.header });
+            menuY += 24;
+        } else {
+            HWND b = gMenuBtns[static_cast<size_t>(slot.page)];
+            ShowWindow(b, show ? SW_SHOW : SW_HIDE);
+            MoveWindow(b, 10, menuY, kSidebarWidth - 20, 24, TRUE);
+            menuY += 26;
+        }
     }
     ShowWindow(gLogout, show ? SW_SHOW : SW_HIDE);
     MoveWindow(gLogout, 10, height - 52, kSidebarWidth - 20, 32, TRUE);
@@ -1884,16 +1918,25 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         g.DrawImage(gBackdrop, 0, 0);
 
         const Gdiplus::RectF bar(8.0f, 6.0f, w - 16.0f, 40.0f);
-        ui::FillRoundRect(g, Gdiplus::RectF(bar.X + 2.0f, bar.Y + 6.0f, bar.Width, bar.Height), 14.0f,
-            Gdiplus::Color(40, 30, 58, 138));
-        ui::FillRoundRect(g, Gdiplus::RectF(bar.X + 1.0f, bar.Y + 3.0f, bar.Width, bar.Height), 14.0f,
-            Gdiplus::Color(60, 37, 99, 235));
-        ui::FillRoundRect(g, bar, 14.0f, Gdiplus::Color(255, 255, 255, 255));
-        ui::StrokeRoundRect(g, bar, 14.0f, Gdiplus::Color(255, 150, 185, 245), 1.5f);
+        for (int k = 3; k >= 1; --k) {
+            ui::FillRoundRect(g, Gdiplus::RectF(bar.X + k, bar.Y + k * 2.0f, bar.Width, bar.Height), 14.0f,
+                Gdiplus::Color(static_cast<BYTE>(14 - k * 3), 30, 58, 138));
+        }
+        ui::FillRoundRect(g, bar, 14.0f, Gdiplus::Color(178, 255, 255, 255));
+        ui::StrokeRoundRect(g, bar, 14.0f, Gdiplus::Color(210, 255, 255, 255), 1.5f);
+        Gdiplus::LinearGradientBrush accent(Gdiplus::RectF(bar.X, bar.Y + bar.Height - 3.0f, bar.Width, 3.0f),
+            Gdiplus::Color(255, 37, 99, 235), Gdiplus::Color(255, 96, 165, 250), Gdiplus::LinearGradientModeHorizontal);
+        g.FillRectangle(&accent, bar.X + 14.0f, bar.Y + bar.Height - 3.0f, bar.Width - 28.0f, 3.0f);
         if (gSidebarVisible) {
             Gdiplus::SolidBrush sidebar(ui::palette::Sidebar());
             g.FillRectangle(&sidebar, 0.0f, static_cast<float>(kTopbarHeight), static_cast<float>(kSidebarWidth),
                 h - static_cast<float>(kTopbarHeight));
+        }
+        if (gSidebarVisible) {
+            for (const auto& s : gSections) {
+                ui::DrawUiText(g, s.text.c_str(), Gdiplus::RectF(18.0f, static_cast<float>(s.y), 200.0f, 18.0f),
+                    11.0f, Gdiplus::Color(255, 148, 163, 184), true);
+            }
         }
         if (gCurrentPage == L"dashboard") {
             const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
