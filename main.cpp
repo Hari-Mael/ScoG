@@ -1083,7 +1083,7 @@ void BuildBackdrop(int w, int h) {
     gBackdrop = nullptr;
     const int sw = std::max(1, w / 4);
     const int sh = std::max(1, h / 4);
-    Gdiplus::Bitmap small(sw, sh, Gdiplus::PixelFormat32bppARGB);
+    Gdiplus::Bitmap small(sw, sh, PixelFormat32bppARGB);
     {
         Gdiplus::Graphics gs(&small);
         const float fw = static_cast<float>(sw);
@@ -1102,7 +1102,7 @@ void BuildBackdrop(int w, int h) {
     Gdiplus::Rect rect(0, 0, sw, sh);
     Gdiplus::BitmapData data;
     small.LockBits(&rect, Gdiplus::ImageLockModeRead | Gdiplus::ImageLockModeWrite,
-        Gdiplus::PixelFormat32bppARGB, &data);
+        PixelFormat32bppARGB, &data);
     vector<unsigned char> px(static_cast<size_t>(sw) * static_cast<size_t>(sh) * 4);
     for (int y = 0; y < sh; ++y) {
         std::memcpy(&px[static_cast<size_t>(y) * sw * 4],
@@ -1118,7 +1118,7 @@ void BuildBackdrop(int w, int h) {
     }
     small.UnlockBits(&data);
 
-    gBackdrop = new Gdiplus::Bitmap(w, h, Gdiplus::PixelFormat32bppPARGB);
+    gBackdrop = new Gdiplus::Bitmap(w, h, PixelFormat32bppPARGB);
     Gdiplus::Graphics gf(gBackdrop);
     gf.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBilinear);
     gf.DrawImage(&small, 0, 0, w, h);
@@ -1515,7 +1515,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (!gBackdrop || gBackdropW != cw || gBackdropH != ch) BuildBackdrop(cw, ch);
         if (!gBack || static_cast<int>(gBack->GetWidth()) != cw || static_cast<int>(gBack->GetHeight()) != ch) {
             delete gBack;
-            gBack = new Gdiplus::Bitmap(cw, ch, Gdiplus::PixelFormat32bppPARGB);
+            gBack = new Gdiplus::Bitmap(cw, ch, PixelFormat32bppPARGB);
         }
         Gdiplus::Graphics g(gBack);
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
