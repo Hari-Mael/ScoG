@@ -665,6 +665,7 @@ bool InputDialog(HWND owner, LPCWSTR title, vector<DlgField>& fields) {
     if (!dlg) return false;
     if (owner) EnableWindow(owner, FALSE);
     ShowWindow(dlg, SW_SHOW);
+    InvalidateRect(dlg, nullptr, TRUE);
     UpdateWindow(dlg);
     SetFocus(GetDlgItem(dlg, ID_FIELD_BASE));
     PumpUntilClosed(dlg, IDOK, IDCANCEL);
@@ -1788,6 +1789,8 @@ void LayoutMain(HWND hwnd) {
             : L"+ Nouveau";
         SetWindowTextW(gAddBtn, label.c_str());
         MoveWindow(gAddBtn, width - kMargin - 190, kTopbarHeight + 28, 180, 32, TRUE);
+        HRGN addShape = CreateRoundRectRgn(0, 0, 181, 33, 26, 26);
+        SetWindowRgn(gAddBtn, addShape, TRUE);
         MoveWindow(gSearch, left + 16, kTopbarHeight + 8 + 84 + 10,
             static_cast<int>((width - left - kMargin - 32) * 0.4f), 24, TRUE);
     }
@@ -1881,10 +1884,12 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         g.DrawImage(gBackdrop, 0, 0);
 
         const Gdiplus::RectF bar(8.0f, 6.0f, w - 16.0f, 40.0f);
-        ui::FillRoundRect(g, Gdiplus::RectF(bar.X + 1.0f, bar.Y + 4.0f, bar.Width, bar.Height), 14.0f,
-            Gdiplus::Color(30, 30, 58, 138));
-        ui::FillRoundRect(g, bar, 14.0f, Gdiplus::Color(248, 255, 255, 255));
-        ui::StrokeRoundRect(g, bar, 14.0f, ui::palette::Border());
+        ui::FillRoundRect(g, Gdiplus::RectF(bar.X + 2.0f, bar.Y + 6.0f, bar.Width, bar.Height), 14.0f,
+            Gdiplus::Color(40, 30, 58, 138));
+        ui::FillRoundRect(g, Gdiplus::RectF(bar.X + 1.0f, bar.Y + 3.0f, bar.Width, bar.Height), 14.0f,
+            Gdiplus::Color(60, 37, 99, 235));
+        ui::FillRoundRect(g, bar, 14.0f, Gdiplus::Color(255, 255, 255, 255));
+        ui::StrokeRoundRect(g, bar, 14.0f, Gdiplus::Color(255, 150, 185, 245), 1.5f);
         if (gSidebarVisible) {
             Gdiplus::SolidBrush sidebar(ui::palette::Sidebar());
             g.FillRectangle(&sidebar, 0.0f, static_cast<float>(kTopbarHeight), static_cast<float>(kSidebarWidth),
