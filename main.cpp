@@ -1220,6 +1220,8 @@ void LayoutMain(HWND hwnd) {
         MoveWindow(b, x, actionsY, kActionButtonWidth, 32, TRUE);
         x += kActionSpacing;
     }
+    InvalidateRect(hwnd, nullptr, TRUE);
+    RedrawChrome();
 }
 
 void OnCommand(HWND hwnd, int id, int code) {
