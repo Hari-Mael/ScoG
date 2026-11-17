@@ -708,15 +708,15 @@ void HandleLogin(HWND hwnd) {
 LRESULT CALLBACK LoginProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_CREATE: {
-        CreateCtl(L"STATIC", L"Identifiant", WS_CHILD | WS_VISIBLE, 20, 20, 340, 18, hwnd, 0);
-        gLoginUser = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 20, 42, 340, 26, hwnd, 0);
-        CreateCtl(L"STATIC", L"Mot de passe", WS_CHILD | WS_VISIBLE, 20, 80, 340, 18, hwnd, 0);
-        gLoginPass = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 20, 102, 280, 26, hwnd, 0);
+        CreateCtl(L"STATIC", L"Identifiant", WS_CHILD | WS_VISIBLE, 370, 60, 340, 18, hwnd, 0);
+        gLoginUser = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 372, 86, 336, 22, hwnd, 0);
+        CreateCtl(L"STATIC", L"Mot de passe", WS_CHILD | WS_VISIBLE, 370, 120, 340, 18, hwnd, 0);
+        gLoginPass = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 372, 146, 282, 22, hwnd, 0);
         SendMessageW(gLoginPass, EM_SETPASSWORDCHAR, kPasswordChar, 0);
         gPasswordHidden = true;
-        gLoginEye = CreateCtl(L"BUTTON", L"Voir", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 306, 102, 54, 26, hwnd, ID_EYE);
-        gLoginMsg = CreateCtl(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 20, 140, 340, 36, hwnd, 0);
-        CreateCtl(L"BUTTON", L"Se connecter", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 20, 190, 340, 36, hwnd, ID_LOGIN);
+        gLoginEye = CreateCtl(L"BUTTON", L"Voir", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 660, 140, 58, 30, hwnd, ID_EYE);
+        gLoginMsg = CreateCtl(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 370, 186, 340, 36, hwnd, 0);
+        CreateCtl(L"BUTTON", L"Se connecter", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 370, 236, 340, 40, hwnd, ID_LOGIN);
         return 0;
     }
     case WM_ERASEBKGND:
@@ -726,15 +726,33 @@ LRESULT CALLBACK LoginProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc;
         GetClientRect(hwnd, &rc);
+        const float w = static_cast<float>(rc.right);
+        const float h = static_cast<float>(rc.bottom);
         Gdiplus::Graphics g(hdc);
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        const Gdiplus::RectF full(0.0f, 0.0f, static_cast<float>(rc.right), static_cast<float>(rc.bottom));
-        Gdiplus::LinearGradientBrush bg(full, Gdiplus::Color(255, 232, 238, 255),
-            Gdiplus::Color(255, 210, 222, 250), Gdiplus::LinearGradientModeVertical);
-        g.FillRectangle(&bg, full);
-        const Gdiplus::RectF card(12.0f, 12.0f, static_cast<float>(rc.right - 24), static_cast<float>(rc.bottom - 24));
-        ui::FillRoundRect(g, card, 14.0f, ui::palette::Card());
-        ui::StrokeRoundRect(g, card, 14.0f, ui::palette::Border());
+        Gdiplus::SolidBrush bg(ui::palette::Background());
+        g.FillRectangle(&bg, 0.0f, 0.0f, w, h);
+
+        Gdiplus::LinearGradientBrush panel(Gdiplus::RectF(0.0f, 0.0f, 320.0f, h),
+            Gdiplus::Color(255, 37, 99, 235), Gdiplus::Color(255, 30, 58, 138), Gdiplus::LinearGradientModeVertical);
+        g.FillRectangle(&panel, 0.0f, 0.0f, 320.0f, h);
+        Gdiplus::SolidBrush halo(Gdiplus::Color(40, 255, 255, 255));
+        g.FillEllipse(&halo, 180.0f, -70.0f, 230.0f, 230.0f);
+        g.FillEllipse(&halo, -90.0f, h - 130.0f, 250.0f, 250.0f);
+        ui::DrawUiText(g, L"Gestion scolaire", Gdiplus::RectF(32.0f, 96.0f, 260.0f, 40.0f),
+            26.0f, ui::palette::White(), true);
+        ui::DrawUiText(g, L"Accedez a votre espace de travail.", Gdiplus::RectF(32.0f, 140.0f, 260.0f, 44.0f),
+            14.0f, Gdiplus::Color(255, 220, 232, 255));
+        ui::DrawUiText(g, L"Eleves - Classes - Paiements", Gdiplus::RectF(32.0f, 200.0f, 260.0f, 22.0f),
+            12.0f, Gdiplus::Color(255, 190, 210, 255));
+
+        const Gdiplus::RectF card(340.0f, 20.0f, w - 360.0f, h - 40.0f);
+        ui::FillRoundRect(g, card, 16.0f, ui::palette::Card());
+        ui::StrokeRoundRect(g, card, 16.0f, ui::palette::Border());
+        ui::FillRoundRect(g, Gdiplus::RectF(366.0f, 80.0f, 348.0f, 34.0f), 8.0f, ui::palette::Card());
+        ui::StrokeRoundRect(g, Gdiplus::RectF(366.0f, 80.0f, 348.0f, 34.0f), 8.0f, ui::palette::Border());
+        ui::FillRoundRect(g, Gdiplus::RectF(366.0f, 140.0f, 288.0f, 34.0f), 8.0f, ui::palette::Card());
+        ui::StrokeRoundRect(g, Gdiplus::RectF(366.0f, 140.0f, 288.0f, 34.0f), 8.0f, ui::palette::Border());
         EndPaint(hwnd, &ps);
         return 0;
     }
@@ -770,7 +788,7 @@ LRESULT CALLBACK LoginProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 bool RunLogin() {
     gLoggedIn = false;
-    HWND h = CreateFixedWindow(L"GS_Login", L"Connexion - Gestion scolaire", 380, 250,
+    HWND h = CreateFixedWindow(L"GS_Login", L"Connexion - Gestion scolaire", 780, 320,
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN, 0, nullptr, nullptr);
     if (!h) return false;
     ShowWindow(h, SW_SHOW);
@@ -874,145 +892,9 @@ wstring BuildPageText() {
     return ss.str();
 }
 
-bool IsDataPage() {
-    return gCurrentPage == L"eleves" || gCurrentPage == L"classes" || gCurrentPage == L"paiements";
-}
-
-struct TableColumn {
-    const wchar_t* title;
-    float weight;
-};
-
-Gdiplus::Color StatusColor(const wstring& status) {
-    if (status == L"Paye") return ui::palette::Success();
-    if (status == L"Impaye") return ui::palette::Warning();
-    return ui::palette::TextMuted();
-}
-
-void DrawStatusPill(Gdiplus::Graphics& g, float x, float y, const wstring& status) {
-    const Gdiplus::RectF r(x, y, 96.0f, 22.0f);
-    ui::FillRoundRect(g, r, 11.0f, StatusColor(status));
-    ui::DrawUiText(g, status.c_str(), r, 12.0f, ui::palette::White(), false, true);
-}
-
-void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
-                   const vector<TableColumn>& cols, const vector<vector<wstring>>& rows, int statusCol) {
-    ui::FillRoundRect(g, Gdiplus::RectF(x, y, w, h), 12.0f, ui::palette::Card());
-    ui::StrokeRoundRect(g, Gdiplus::RectF(x, y, w, h), 12.0f, ui::palette::Border());
-
-    float totalWeight = 0.0f;
-    for (const auto& c : cols) totalWeight += c.weight;
-    const float inner = w - 32.0f;
-    vector<float> xs;
-    vector<float> widths;
-    float cx = x + 16.0f;
-    for (const auto& c : cols) {
-        const float cw = inner * c.weight / totalWeight;
-        xs.push_back(cx);
-        widths.push_back(cw);
-        cx += cw;
-    }
-
-    const float headerH = 40.0f;
-    const float rowH = 38.0f;
-    for (size_t i = 0; i < cols.size(); ++i) {
-        ui::DrawUiText(g, cols[i].title, Gdiplus::RectF(xs[i], y + 10.0f, widths[i] - 8.0f, 22.0f),
-            13.0f, ui::palette::TextMuted(), true);
-    }
-    Gdiplus::Pen headerLine(ui::palette::Border());
-    g.DrawLine(&headerLine, x + 16.0f, y + headerH, x + w - 16.0f, y + headerH);
-
-    if (rows.empty()) {
-        ui::DrawUiText(g, L"Aucune donnee pour ce cycle.",
-            Gdiplus::RectF(x + 16.0f, y + headerH + 16.0f, w - 32.0f, 22.0f), 14.0f, ui::palette::TextMuted());
-        return;
-    }
-
-    const float bodyH = h - headerH - 8.0f;
-    const size_t maxRows = bodyH > 0.0f ? static_cast<size_t>(bodyH / rowH) : 0;
-    const bool overflow = rows.size() > maxRows;
-    size_t shown = rows.size();
-    if (overflow) shown = maxRows > 1 ? maxRows - 1 : 0;
-
-    for (size_t r = 0; r < shown; ++r) {
-        const float rowY = y + headerH + 4.0f + static_cast<float>(r) * rowH;
-        if (r % 2 == 1) {
-            Gdiplus::SolidBrush alt(Gdiplus::Color(255, 248, 250, 253));
-            g.FillRectangle(&alt, x + 1.0f, rowY, w - 2.0f, rowH);
-        }
-        for (size_t i = 0; i < cols.size() && i < rows[r].size(); ++i) {
-            if (static_cast<int>(i) == statusCol) {
-                DrawStatusPill(g, xs[i], rowY + 8.0f, rows[r][i]);
-            } else {
-                ui::DrawUiText(g, rows[r][i].c_str(),
-                    Gdiplus::RectF(xs[i], rowY + 6.0f, widths[i] - 8.0f, rowH - 10.0f),
-                    13.0f, ui::palette::TextMain());
-            }
-        }
-    }
-    if (overflow) {
-        const wstring more = L"+ " + to_wstring(rows.size() - shown) + L" autre(s) ligne(s)";
-        ui::DrawUiText(g, more.c_str(), Gdiplus::RectF(x + 16.0f, y + h - 30.0f, w - 32.0f, 20.0f),
-            12.0f, ui::palette::TextMuted());
-    }
-}
-
-void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom) {
-    const float x = static_cast<float>(left);
-    const float y = static_cast<float>(top);
-    const float w = static_cast<float>(width);
-
-    vector<TableColumn> cols;
-    vector<vector<wstring>> rows;
-    int statusCol = -1;
-
-    if (gCurrentPage == L"eleves") {
-        cols = { TableColumn{L"ID", 0.8f}, TableColumn{L"Nom", 2.2f}, TableColumn{L"Classe", 1.2f},
-                 TableColumn{L"Email", 2.4f}, TableColumn{L"Sexe", 0.8f} };
-        for (const auto& e : gEleves) {
-            if (e.cycle != gCycle) continue;
-            rows.push_back({ to_wstring(e.id), e.nom, e.classe, e.email, e.sexe });
-        }
-    } else if (gCurrentPage == L"classes") {
-        cols = { TableColumn{L"ID", 0.8f}, TableColumn{L"Classe", 1.5f},
-                 TableColumn{L"Annee", 1.5f}, TableColumn{L"Effectif", 1.2f} };
-        for (const auto& c : gClasses) {
-            if (c.cycle != gCycle) continue;
-            rows.push_back({ to_wstring(c.id), c.nom, c.annee, to_wstring(CountElevesInClasse(c.nom)) });
-        }
-    } else {
-        cols = { TableColumn{L"Reference", 1.6f}, TableColumn{L"Eleve", 2.0f}, TableColumn{L"Classe", 1.0f},
-                 TableColumn{L"Type", 1.4f}, TableColumn{L"Montant", 1.2f}, TableColumn{L"Reste", 1.2f},
-                 TableColumn{L"Statut", 1.2f} };
-        statusCol = 6;
-        for (const auto& p : gPaiements) {
-            if (p.cycle != gCycle) continue;
-            rows.push_back({ p.ref, p.eleve, p.classe, p.type,
-                to_wstring(p.montant) + L" " + gS.devise,
-                to_wstring(p.reste) + L" " + gS.devise, p.statut });
-        }
-    }
-
-    const wstring title = PageLabel(gCurrentPage);
-    const wstring count = to_wstring(rows.size()) + L" element(s) - Cycle : " + CycleLabel(gCycle);
-    ui::FillRoundRect(g, Gdiplus::RectF(x, y, w, 72.0f), 14.0f, Gdiplus::Color(255, 30, 58, 138));
-    ui::DrawUiText(g, title.c_str(), Gdiplus::RectF(x + 24.0f, y + 12.0f, w - 48.0f, 30.0f),
-        22.0f, ui::palette::White(), true);
-    ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + 24.0f, y + 42.0f, w - 48.0f, 20.0f),
-        14.0f, Gdiplus::Color(255, 190, 210, 255));
-
-    const float filterY = y + 84.0f;
-    ui::FillRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, ui::palette::Card());
-    ui::StrokeRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, ui::palette::Border());
-    ui::DrawUiText(g, L"Rechercher...", Gdiplus::RectF(x + 16.0f, filterY + 10.0f, w * 0.4f, 24.0f),
-        13.0f, ui::palette::TextMuted());
-
-    const float tableY = filterY + 56.0f;
-    DrawDataTable(g, x, tableY, w, static_cast<float>(bottom) - tableY, cols, rows, statusCol);
-}
-
 constexpr UINT_PTR kAnimTimer = 1;
-constexpr ULONGLONG kAnimMs = 2200;
+constexpr ULONGLONG kAnimMs = 2600;
+int gHoverRow = -1;
 ULONGLONG gAnimStart = 0;
 
 float Clamp01(float v) {
@@ -1124,6 +1006,153 @@ void BuildBackdrop(int w, int h) {
     gf.DrawImage(&small, 0, 0, w, h);
     gBackdropW = w;
     gBackdropH = h;
+}
+
+bool IsDataPage() {
+    return gCurrentPage == L"eleves" || gCurrentPage == L"classes" || gCurrentPage == L"paiements";
+}
+
+struct TableColumn {
+    const wchar_t* title;
+    float weight;
+};
+
+Gdiplus::Color StatusColor(const wstring& status) {
+    if (status == L"Paye") return ui::palette::Success();
+    if (status == L"Impaye") return ui::palette::Warning();
+    return ui::palette::TextMuted();
+}
+
+void DrawStatusPill(Gdiplus::Graphics& g, float x, float y, const wstring& status, float a) {
+    const Gdiplus::RectF r(x, y, 96.0f, 22.0f);
+    ui::FillRoundRect(g, r, 11.0f, Fade(StatusColor(status), a));
+    ui::DrawUiText(g, status.c_str(), r, 12.0f, Fade(ui::palette::White(), a), false, true);
+}
+
+void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
+                   const vector<TableColumn>& cols, const vector<vector<wstring>>& rows,
+                   int statusCol, ULONGLONG now) {
+    const float frameA = Stage(now, 200.0f, 400.0f);
+    ui::FillRoundRect(g, Gdiplus::RectF(x, y, w, h), 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), frameA * 0.7f));
+    ui::StrokeRoundRect(g, Gdiplus::RectF(x, y, w, h), 14.0f, Fade(ui::palette::Border(), frameA), 1.5f);
+
+    float totalWeight = 0.0f;
+    for (const auto& c : cols) totalWeight += c.weight;
+    const float inner = w - 32.0f;
+    vector<float> xs;
+    vector<float> widths;
+    float cx = x + 16.0f;
+    for (const auto& c : cols) {
+        const float cw = inner * c.weight / totalWeight;
+        xs.push_back(cx);
+        widths.push_back(cw);
+        cx += cw;
+    }
+
+    const float headerH = 40.0f;
+    const float rowH = 38.0f;
+    for (size_t i = 0; i < cols.size(); ++i) {
+        ui::DrawUiText(g, cols[i].title, Gdiplus::RectF(xs[i], y + 10.0f, widths[i] - 8.0f, 22.0f),
+            13.0f, Fade(ui::palette::TextMuted(), frameA), true);
+    }
+    Gdiplus::Pen headerLine(Fade(ui::palette::Border(), frameA));
+    g.DrawLine(&headerLine, x + 16.0f, y + headerH, x + w - 16.0f, y + headerH);
+
+    if (rows.empty()) {
+        ui::DrawUiText(g, L"Aucune donnee pour ce cycle.",
+            Gdiplus::RectF(x + 16.0f, y + headerH + 16.0f, w - 32.0f, 22.0f), 14.0f, Fade(ui::palette::TextMuted(), frameA));
+        return;
+    }
+
+    const float bodyH = h - headerH - 8.0f;
+    const size_t maxRows = bodyH > 0.0f ? static_cast<size_t>(bodyH / rowH) : 0;
+    const bool overflow = rows.size() > maxRows;
+    size_t shown = rows.size();
+    if (overflow) shown = maxRows > 1 ? maxRows - 1 : 0;
+
+    for (size_t r = 0; r < shown; ++r) {
+        const float ra = Stage(now, 250.0f + static_cast<float>(r) * 45.0f, 380.0f);
+        if (ra <= 0.0f) continue;
+        const float rowY = y + headerH + 4.0f + static_cast<float>(r) * rowH + (1.0f - ra) * 12.0f;
+        if (static_cast<int>(r) == gHoverRow) {
+            ui::FillRoundRect(g, Gdiplus::RectF(x + 1.0f, rowY, w - 2.0f, rowH), 6.0f,
+                Fade(Gdiplus::Color(255, 226, 238, 255), ra));
+        } else if (r % 2 == 1) {
+            Gdiplus::SolidBrush alt(Fade(Gdiplus::Color(255, 248, 250, 253), ra));
+            g.FillRectangle(&alt, x + 1.0f, rowY, w - 2.0f, rowH);
+        }
+        for (size_t i = 0; i < cols.size() && i < rows[r].size(); ++i) {
+            if (static_cast<int>(i) == statusCol) {
+                DrawStatusPill(g, xs[i], rowY + 8.0f, rows[r][i], ra);
+            } else {
+                ui::DrawUiText(g, rows[r][i].c_str(),
+                    Gdiplus::RectF(xs[i], rowY + 6.0f, widths[i] - 8.0f, rowH - 10.0f),
+                    13.0f, Fade(ui::palette::TextMain(), ra));
+            }
+        }
+    }
+    if (overflow) {
+        const wstring more = L"+ " + to_wstring(rows.size() - shown) + L" autre(s) ligne(s)";
+        ui::DrawUiText(g, more.c_str(), Gdiplus::RectF(x + 16.0f, y + h - 30.0f, w - 32.0f, 20.0f),
+            12.0f, Fade(ui::palette::TextMuted(), frameA));
+    }
+}
+
+void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom, ULONGLONG now) {
+    const float x = static_cast<float>(left);
+    const float y = static_cast<float>(top);
+    const float w = static_cast<float>(width);
+
+    vector<TableColumn> cols;
+    vector<vector<wstring>> rows;
+    int statusCol = -1;
+
+    if (gCurrentPage == L"eleves") {
+        cols = { TableColumn{L"ID", 0.8f}, TableColumn{L"Nom", 2.2f}, TableColumn{L"Classe", 1.2f},
+                 TableColumn{L"Email", 2.4f}, TableColumn{L"Sexe", 0.8f} };
+        for (const auto& e : gEleves) {
+            if (e.cycle != gCycle) continue;
+            rows.push_back({ to_wstring(e.id), e.nom, e.classe, e.email, e.sexe });
+        }
+    } else if (gCurrentPage == L"classes") {
+        cols = { TableColumn{L"ID", 0.8f}, TableColumn{L"Classe", 1.5f},
+                 TableColumn{L"Annee", 1.5f}, TableColumn{L"Effectif", 1.2f} };
+        for (const auto& c : gClasses) {
+            if (c.cycle != gCycle) continue;
+            rows.push_back({ to_wstring(c.id), c.nom, c.annee, to_wstring(CountElevesInClasse(c.nom)) });
+        }
+    } else {
+        cols = { TableColumn{L"Reference", 1.6f}, TableColumn{L"Eleve", 2.0f}, TableColumn{L"Classe", 1.0f},
+                 TableColumn{L"Type", 1.4f}, TableColumn{L"Montant", 1.2f}, TableColumn{L"Reste", 1.2f},
+                 TableColumn{L"Statut", 1.2f} };
+        statusCol = 6;
+        for (const auto& p : gPaiements) {
+            if (p.cycle != gCycle) continue;
+            rows.push_back({ p.ref, p.eleve, p.classe, p.type,
+                to_wstring(p.montant) + L" " + gS.devise,
+                to_wstring(p.reste) + L" " + gS.devise, p.statut });
+        }
+    }
+
+    const float bandA = Stage(now, 0.0f, 450.0f);
+    const float filterA = Stage(now, 120.0f, 400.0f);
+    const wstring title = PageLabel(gCurrentPage);
+    const wstring count = to_wstring(rows.size()) + L" element(s) - Cycle : " + CycleLabel(gCycle);
+    FillGradientRoundRect(g, Gdiplus::RectF(x, y, w, 72.0f), 14.0f,
+        Fade(Gdiplus::Color(255, 37, 99, 235), bandA), Fade(Gdiplus::Color(255, 96, 165, 250), bandA));
+    ui::DrawUiText(g, title.c_str(), Gdiplus::RectF(x + 24.0f, y + 12.0f, w - 48.0f, 30.0f),
+        22.0f, Fade(ui::palette::White(), bandA), true);
+    ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + 24.0f, y + 42.0f, w - 48.0f, 20.0f),
+        14.0f, Fade(Gdiplus::Color(255, 240, 232, 255), bandA));
+
+    const float filterY = y + 84.0f;
+    ui::FillRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(Gdiplus::Color(255, 255, 255, 255), filterA * 0.7f));
+    ui::StrokeRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(ui::palette::Border(), filterA), 1.5f);
+    ui::DrawUiText(g, L"Rechercher...", Gdiplus::RectF(x + 16.0f, filterY + 10.0f, w * 0.4f, 24.0f),
+        13.0f, Fade(ui::palette::TextMuted(), filterA));
+
+    const float tableY = filterY + 56.0f;
+    DrawDataTable(g, x, tableY, w, static_cast<float>(bottom) - tableY, cols, rows, statusCol, now);
 }
 
 void DrawKpiCard(Gdiplus::Graphics& g, const Gdiplus::RectF& r, const wchar_t* label,
@@ -1540,7 +1569,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (IsDataPage()) {
             const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
             const int top = kTopbarHeight + 8;
-            DrawDataPage(g, left, top, cw - left - kMargin, ch - 44 - kMargin);
+            DrawDataPage(g, left, top, cw - left - kMargin, ch - 44 - kMargin, GetTickCount64());
         }
         Gdiplus::Graphics screen(hdc);
         screen.DrawImage(gBack, 0, 0);
@@ -1575,6 +1604,33 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         ui::DrawButton(item, kind);
         return TRUE;
     }
+    case WM_MOUSEMOVE: {
+        const int mx = static_cast<short>(LOWORD(lParam));
+        const int my = static_cast<short>(HIWORD(lParam));
+        int row = -1;
+        if (IsDataPage()) {
+            const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            const int firstRow = kTopbarHeight + 8 + 84 + 56 + 40 + 4;
+            if (mx >= left && mx <= rc.right - kMargin && my >= firstRow && my < rc.bottom - 44 - kMargin) {
+                row = (my - firstRow) / 38;
+            }
+        }
+        TRACKMOUSEEVENT tme{ sizeof(tme), TME_LEAVE, hwnd, 0 };
+        TrackMouseEvent(&tme);
+        if (row != gHoverRow) {
+            gHoverRow = row;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        if (gHoverRow != -1) {
+            gHoverRow = -1;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
     case WM_TIMER:
         if (wParam == kAnimTimer) {
             if (GetTickCount64() - gAnimStart < kAnimMs) {
