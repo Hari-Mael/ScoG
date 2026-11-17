@@ -16,6 +16,7 @@
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -60,6 +61,8 @@ enum ControlId {
     ID_ACT_CLASSE,
     ID_ACT_PAIEMENT,
     ID_ACT_PARAMS,
+    ID_ACT_NEW = 4010,
+    ID_SEARCH = 4020,
     ID_EYE = 5001,
     ID_LOGIN,
     ID_FIELD_BASE = 100
@@ -155,6 +158,12 @@ bool gSidebarVisible = true;
 vector<Eleve> gEleves;
 vector<Classe> gClasses;
 vector<Paiement> gPaiements;
+struct GRec {
+    long long id;
+    wstring cycle;
+    vector<wstring> v;
+};
+std::map<wstring, vector<GRec>> gStore;
 long long gNextId = 1000;
 wstring gCurrentPage = L"dashboard";
 HINSTANCE gInstance = nullptr;
@@ -170,6 +179,9 @@ HWND gAdminBtn = nullptr;
 HWND gToggle = nullptr;
 HWND gContent = nullptr;
 HWND gLogout = nullptr;
+HWND gSearch = nullptr;
+HWND gAddBtn = nullptr;
+wstring gQuery;
 HWND gLoginUser = nullptr;
 HWND gLoginPass = nullptr;
 HWND gLoginEye = nullptr;
@@ -427,6 +439,13 @@ void SaveData() {
         for (const auto& p : gPaiements)
             out << WideToUtf8(JoinRecord({ L"P", p.ref, p.eleve, p.classe, p.type, p.cycle,
                 to_wstring(p.montant), to_wstring(p.reste), p.statut })) << '\n';
+        for (const auto& kv : gStore) {
+            for (const auto& r : kv.second) {
+                vector<wstring> f{ L"G", kv.first, to_wstring(r.id), r.cycle };
+                f.insert(f.end(), r.v.begin(), r.v.end());
+                out << WideToUtf8(JoinRecord(f)) << '\n';
+            }
+        }
         out.flush();
         if (!out.good()) {
             out.close();
@@ -454,6 +473,11 @@ void LoadData() {
             Classe c{ wcstoll(f[1].c_str(), nullptr, 10), f[2], f[3], f[4] };
             BumpId(c.id);
             gClasses.push_back(c);
+        } else if (f[0] == L"G" && f.size() >= 4) {
+            GRec r{ wcstoll(f[2].c_str(), nullptr, 10), f[3], {} };
+            for (size_t k = 4; k < f.size(); ++k) r.v.push_back(f[k]);
+            BumpId(r.id);
+            gStore[f[1]].push_back(r);
         } else if (f[0] == L"P" && f.size() >= 9) {
             Paiement p{ f[1], f[2], f[3], f[4], f[5], f[8],
                 wcstoll(f[6].c_str(), nullptr, 10), wcstoll(f[7].c_str(), nullptr, 10) };
@@ -1013,17 +1037,177 @@ bool IsDataPage() {
 }
 
 struct TableColumn {
-    const wchar_t* title;
+    wstring title;
     float weight;
 };
 
+struct FieldDef {
+    wstring label;
+    float weight;
+    vector<wstring> options;
+    bool computed;
+};
+
+struct RowView {
+    long long id;
+    bool editable;
+    vector<wstring> cells;
+};
+
+struct View {
+    vector<TableColumn> cols;
+    vector<RowView> rows;
+};
+
+wstring LowerStr(wstring s) {
+    for (auto& c : s) c = static_cast<wchar_t>(towlower(c));
+    return s;
+}
+
+vector<wstring> ElevesNames() {
+    vector<wstring> names;
+    for (const auto& e : gEleves) if (e.cycle == gCycle) names.push_back(e.nom);
+    return names;
+}
+
+vector<FieldDef> SchemaFor(const wstring& key) {
+    auto F = [](const wchar_t* l, float wgt, vector<wstring> opts = {}, bool comp = false) {
+        return FieldDef{ l, wgt, std::move(opts), comp };
+    };
+    const vector<wstring> classes = ClassesForCycle(gCycle);
+    if (key == L"eleves") return { F(L"Nom", 2.2f), F(L"Classe", 1.2f, classes), F(L"Email", 2.4f), F(L"Sexe", 0.8f, { L"M", L"F" }) };
+    if (key == L"classes") return { F(L"Classe", 1.5f), F(L"Annee", 1.5f), F(L"Effectif", 1.2f, {}, true) };
+    if (key == L"paiements") return { F(L"Reference", 1.6f), F(L"Eleve", 2.0f, ElevesNames()),
+        F(L"Type", 1.4f, { L"Inscription", L"Scolarite", L"Cantine", L"Transport", L"Autre" }),
+        F(L"Montant", 1.2f), F(L"Reste", 1.2f, {}, true), F(L"Statut", 1.2f, {}, true) };
+    if (key == L"portal") return { F(L"Utilisateur", 1.8f), F(L"Role", 1.4f, { L"Administrateur", L"Secretaire", L"Enseignant", L"Parent" }),
+        F(L"Email", 2.2f), F(L"Statut", 1.2f, { L"Actif", L"Inactif" }) };
+    if (key == L"cycles") return { F(L"Code", 0.8f), F(L"Nom", 1.8f), F(L"Ordre", 0.8f), F(L"Niveaux", 1.2f) };
+    if (key == L"niveaux") return { F(L"Niveau", 1.8f), F(L"Cycle", 1.4f), F(L"Effectif", 1.2f) };
+    if (key == L"salles") return { F(L"Code", 0.8f), F(L"Nom", 2.0f), F(L"Capacite", 1.2f),
+        F(L"Type", 1.4f, { L"Salle de classe", L"Laboratoire", L"Bibliotheque", L"Gymnase" }) };
+    if (key == L"periodes") return { F(L"Periode", 2.0f), F(L"Debut", 1.4f), F(L"Fin", 1.4f),
+        F(L"Statut", 1.2f, { L"En cours", L"A venir", L"Terminee" }) };
+    if (key == L"calendrier") return { F(L"Evenement", 2.4f), F(L"Date", 1.4f),
+        F(L"Type", 1.4f, { L"Examen", L"Vacances", L"Reunion", L"Evenement" }), F(L"Statut", 1.2f, { L"Prevu", L"Termine", L"Annule" }) };
+    if (key == L"inscriptions") return { F(L"Eleve", 2.2f), F(L"Classe", 1.2f, classes), F(L"Date", 1.2f), F(L"Statut", 1.2f) };
+    if (key == L"parents") return { F(L"Nom", 2.0f), F(L"Lien", 1.2f, { L"Pere", L"Mere", L"Tuteur" }), F(L"Telephone", 1.4f), F(L"Eleve", 2.0f) };
+    if (key == L"presences") return { F(L"Eleve", 2.2f), F(L"Classe", 1.2f, classes), F(L"Date", 1.2f),
+        F(L"Statut", 1.2f, { L"Present", L"Absent", L"Retard" }) };
+    if (key == L"discipline") return { F(L"Eleve", 2.2f), F(L"Date", 1.2f), F(L"Motif", 2.0f), F(L"Statut", 1.2f, { L"Ouvert", L"Resolu" }) };
+    if (key == L"finance") return { F(L"Libelle", 2.0f), F(L"Montant", 1.4f), F(L"Encaisse", 1.4f), F(L"Statut", 1.2f) };
+    if (key == L"etats") return { F(L"Rapport", 2.2f, { L"Liste eleves", L"Paiements", L"Presences" }), F(L"Periode", 1.4f),
+        F(L"Format", 1.0f, { L"PDF", L"Excel" }), F(L"Date", 1.4f) };
+    if (key == L"typesFrais") return { F(L"Code", 0.8f), F(L"Libelle", 2.0f), F(L"Montant", 1.4f),
+        F(L"Periodicite", 1.4f, { L"Mensuel", L"Annuel", L"Unique" }) };
+    if (key == L"carte") return { F(L"Eleve", 2.2f), F(L"Classe", 1.2f), F(L"Matricule", 1.4f), F(L"Statut", 1.2f) };
+    if (key == L"certificats") return { F(L"Eleve", 2.0f), F(L"Type", 1.6f, { L"Scolarite", L"Fin d'annee", L"Transfert" }),
+        F(L"Date", 1.2f), F(L"Statut", 1.2f, { L"Delivre", L"En attente" }) };
+    if (key == L"users") return { F(L"Identifiant", 1.8f), F(L"Role", 1.4f, { L"Super Admin", L"Administrateur", L"Secretaire" }),
+        F(L"Email", 2.2f), F(L"Statut", 1.2f, { L"Actif", L"Inactif" }) };
+    if (key == L"parametres") return { F(L"Champ", 2.4f), F(L"Valeur", 3.0f) };
+    return { F(L"Nom", 2.0f) };
+}
+
+vector<RowView> ModuleRows(const wstring& key) {
+    vector<RowView> out;
+    const wstring dev = gS.devise;
+    if (key == L"eleves") {
+        for (const auto& e : gEleves) {
+            if (e.cycle != gCycle) continue;
+            out.push_back(RowView{ e.id, true, { e.nom, e.classe, e.email, e.sexe } });
+        }
+    } else if (key == L"classes") {
+        for (const auto& c : gClasses) {
+            if (c.cycle != gCycle) continue;
+            out.push_back(RowView{ c.id, true, { c.nom, c.annee, to_wstring(CountElevesInClasse(c.nom)) } });
+        }
+    } else if (key == L"paiements") {
+        for (size_t i = 0; i < gPaiements.size(); ++i) {
+            const Paiement& p = gPaiements[i];
+            if (p.cycle != gCycle) continue;
+            out.push_back(RowView{ static_cast<long long>(i), true,
+                { p.ref, p.eleve, p.type, to_wstring(p.montant), to_wstring(p.reste), p.statut } });
+        }
+    } else if (key == L"cycles") {
+        out.push_back(RowView{ -1, false, { L"ECO", L"Ecole", L"1", to_wstring(SplitComma(gS.classesEcole).size()) } });
+        out.push_back(RowView{ -1, false, { L"COL", L"College", L"2", to_wstring(SplitComma(gS.classesCollege).size()) } });
+        out.push_back(RowView{ -1, false, { L"LYC", L"Lycee", L"3", to_wstring(SplitComma(gS.classesLycee).size()) } });
+    } else if (key == L"niveaux") {
+        const vector<wstring> cycles = { L"ecole", L"college", L"lycee" };
+        for (const auto& cyc : cycles) {
+            for (const auto& niveau : ClassesForCycle(cyc)) {
+                long long n = 0;
+                for (const auto& e : gEleves) if (e.cycle == cyc && e.classe == niveau) ++n;
+                out.push_back(RowView{ -1, false, { niveau, CycleLabel(cyc), to_wstring(n) } });
+            }
+        }
+    } else if (key == L"inscriptions") {
+        for (const auto& e : gEleves) {
+            if (e.cycle != gCycle) continue;
+            out.push_back(RowView{ -1, false, { e.nom, e.classe, L"-", L"Inscrit" } });
+        }
+    } else if (key == L"finance") {
+        for (const auto& p : gPaiements) {
+            if (p.cycle != gCycle) continue;
+            out.push_back(RowView{ -1, false, { p.type, to_wstring(p.montant), to_wstring(p.montant - p.reste), p.statut } });
+        }
+    } else if (key == L"carte") {
+        for (const auto& e : gEleves) {
+            if (e.cycle != gCycle) continue;
+            out.push_back(RowView{ -1, false, { e.nom, e.classe, gS.matricule, L"Actif" } });
+        }
+    } else if (key == L"users") {
+        if (HasAccount()) out.push_back(RowView{ -1, false, { gS.adminUser, L"Super Admin", L"-", L"Actif" } });
+    } else if (key == L"parametres") {
+        out.push_back(RowView{ -1, false, { L"Nom du logiciel", gS.appName } });
+        out.push_back(RowView{ -1, false, { L"Logo", gS.appLogo } });
+        out.push_back(RowView{ -1, false, { L"Etablissement", gS.ecole } });
+        out.push_back(RowView{ -1, false, { L"Matricule", gS.matricule } });
+        out.push_back(RowView{ -1, false, { L"Regime", gS.regime } });
+        out.push_back(RowView{ -1, false, { L"Devise", gS.devise } });
+        out.push_back(RowView{ -1, false, { L"Classes Ecole", gS.classesEcole } });
+        out.push_back(RowView{ -1, false, { L"Classes College", gS.classesCollege } });
+        out.push_back(RowView{ -1, false, { L"Classes Lycee", gS.classesLycee } });
+    } else {
+        const auto it = gStore.find(key);
+        if (it != gStore.end()) {
+            for (const auto& r : it->second) {
+                if (r.cycle != gCycle) continue;
+                out.push_back(RowView{ r.id, true, r.v });
+            }
+        }
+    }
+    (void)dev;
+    return out;
+}
+
+View BuildView(const wstring& key, const wstring& query) {
+    View v;
+    for (const auto& f : SchemaFor(key)) v.cols.push_back(TableColumn{ f.label, f.weight });
+    v.cols.push_back(TableColumn{ L"Actions", 1.8f });
+    const wstring q = LowerStr(Trim(query));
+    for (const auto& r : ModuleRows(key)) {
+        if (!q.empty()) {
+            bool hit = false;
+            for (const auto& c : r.cells) {
+                if (LowerStr(c).find(q) != wstring::npos) { hit = true; break; }
+            }
+            if (!hit) continue;
+        }
+        v.rows.push_back(r);
+    }
+    return v;
+}
+
 Gdiplus::Color StatusColor(const wstring& status) {
-    if (status == L"Paye" || status == L"Actif" || status == L"Valide" || status == L"Inscrit" || status == L"Oui")
-        return ui::palette::Success();
-    if (status == L"Impaye" || status == L"En attente" || status == L"Partiel")
-        return ui::palette::Warning();
-    if (status == L"Inactif" || status == L"Refuse" || status == L"Absent")
-        return ui::palette::Danger();
+    static const wchar_t* success[] = { L"Paye", L"Actif", L"Valide", L"Inscrit", L"Oui", L"Present", L"Resolu", L"Delivre", L"Termine", L"Terminee" };
+    static const wchar_t* warning[] = { L"Impaye", L"En attente", L"Partiel", L"Retard", L"Ouvert", L"Prevu", L"A venir" };
+    static const wchar_t* danger[] = { L"Inactif", L"Refuse", L"Absent", L"Annule", L"Exclusion" };
+    for (const wchar_t* s : success) if (status == s) return ui::palette::Success();
+    for (const wchar_t* s : warning) if (status == s) return ui::palette::Warning();
+    for (const wchar_t* s : danger) if (status == s) return ui::palette::Danger();
+    if (status == L"En cours") return ui::palette::Accent();
     return ui::palette::TextMuted();
 }
 
@@ -1033,38 +1217,44 @@ void DrawStatusPill(Gdiplus::Graphics& g, float x, float y, const wstring& statu
     ui::DrawUiText(g, status.c_str(), r, 12.0f, Fade(ui::palette::White(), a), false, true);
 }
 
-void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
-                   const vector<TableColumn>& cols, const vector<vector<wstring>>& rows,
-                   int statusCol, ULONGLONG now) {
-    const float frameA = Stage(now, 200.0f, 400.0f);
-    ui::FillRoundRect(g, Gdiplus::RectF(x, y, w, h), 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), frameA * 0.7f));
-    ui::StrokeRoundRect(g, Gdiplus::RectF(x, y, w, h), 14.0f, Fade(ui::palette::Border(), frameA), 1.5f);
-
-    float totalWeight = 0.0f;
-    for (const auto& c : cols) totalWeight += c.weight;
+void TableGeometry(const vector<TableColumn>& cols, float x, float w, vector<float>& xs, vector<float>& widths) {
+    float total = 0.0f;
+    for (const auto& c : cols) total += c.weight;
     const float inner = w - 32.0f;
-    vector<float> xs;
-    vector<float> widths;
     float cx = x + 16.0f;
+    xs.clear();
+    widths.clear();
     for (const auto& c : cols) {
-        const float cw = inner * c.weight / totalWeight;
+        const float cw = inner * c.weight / total;
         xs.push_back(cx);
         widths.push_back(cw);
         cx += cw;
     }
+}
+
+void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
+                   const vector<TableColumn>& cols, const vector<RowView>& rows,
+                   int statusCol, ULONGLONG now, const wstring& emptyText) {
+    const float frameA = Stage(now, 200.0f, 400.0f);
+    ui::FillRoundRect(g, Gdiplus::RectF(x, y, w, h), 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), frameA * 0.7f));
+    ui::StrokeRoundRect(g, Gdiplus::RectF(x, y, w, h), 14.0f, Fade(ui::palette::Border(), frameA), 1.5f);
+
+    vector<float> xs;
+    vector<float> widths;
+    TableGeometry(cols, x, w, xs, widths);
 
     const float headerH = 40.0f;
     const float rowH = 38.0f;
     for (size_t i = 0; i < cols.size(); ++i) {
-        ui::DrawUiText(g, cols[i].title, Gdiplus::RectF(xs[i], y + 10.0f, widths[i] - 8.0f, 22.0f),
+        ui::DrawUiText(g, cols[i].title.c_str(), Gdiplus::RectF(xs[i], y + 10.0f, widths[i] - 8.0f, 22.0f),
             13.0f, Fade(ui::palette::TextMuted(), frameA), true);
     }
     Gdiplus::Pen headerLine(Fade(ui::palette::Border(), frameA));
     g.DrawLine(&headerLine, x + 16.0f, y + headerH, x + w - 16.0f, y + headerH);
 
     if (rows.empty()) {
-        ui::DrawUiText(g, L"Aucune donnee pour ce module.",
-            Gdiplus::RectF(x + 16.0f, y + headerH + 16.0f, w - 32.0f, 22.0f), 14.0f, Fade(ui::palette::TextMuted(), frameA));
+        ui::DrawUiText(g, emptyText.c_str(), Gdiplus::RectF(x + 16.0f, y + headerH + 16.0f, w - 32.0f, 22.0f),
+            14.0f, Fade(ui::palette::TextMuted(), frameA));
         return;
     }
 
@@ -1074,6 +1264,7 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
     size_t shown = rows.size();
     if (overflow) shown = maxRows > 1 ? maxRows - 1 : 0;
 
+    const size_t actionCol = cols.size() - 1;
     for (size_t r = 0; r < shown; ++r) {
         const float ra = Stage(now, 250.0f + static_cast<float>(r) * 45.0f, 380.0f);
         if (ra <= 0.0f) continue;
@@ -1085,16 +1276,20 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
             Gdiplus::SolidBrush alt(Fade(Gdiplus::Color(255, 248, 250, 253), ra));
             g.FillRectangle(&alt, x + 1.0f, rowY, w - 2.0f, rowH);
         }
-        for (size_t i = 0; i < cols.size() && i < rows[r].size(); ++i) {
+        for (size_t i = 0; i < actionCol; ++i) {
             const Gdiplus::RectF cell(xs[i], rowY + 6.0f, widths[i] - 8.0f, rowH - 10.0f);
+            const wstring text = i < rows[r].cells.size() ? rows[r].cells[i] : wstring();
             if (static_cast<int>(i) == statusCol) {
-                DrawStatusPill(g, xs[i], rowY + 8.0f, rows[r][i], ra);
-            } else if (wcscmp(cols[i].title, L"Actions") == 0) {
-                ui::DrawUiText(g, L"Voir    Modifier    Supprimer", cell, 13.0f, Fade(ui::palette::Accent(), ra));
+                DrawStatusPill(g, xs[i], rowY + 8.0f, text, ra);
             } else {
-                ui::DrawUiText(g, rows[r][i].c_str(), cell, 13.0f, Fade(ui::palette::TextMain(), ra));
+                ui::DrawUiText(g, text.c_str(), cell, 13.0f, Fade(ui::palette::TextMain(), ra));
             }
         }
+        const float ax = xs[actionCol];
+        const float ay = rowY + 6.0f;
+        ui::DrawUiText(g, L"Voir", Gdiplus::RectF(ax, ay, 50.0f, rowH - 10.0f), 13.0f, Fade(ui::palette::Accent(), ra));
+        ui::DrawUiText(g, L"Modifier", Gdiplus::RectF(ax + 56.0f, ay, 70.0f, rowH - 10.0f), 13.0f, Fade(ui::palette::Accent(), ra));
+        ui::DrawUiText(g, L"Supprimer", Gdiplus::RectF(ax + 130.0f, ay, 100.0f, rowH - 10.0f), 13.0f, Fade(ui::palette::Danger(), ra));
     }
     if (overflow) {
         const wstring more = L"+ " + to_wstring(rows.size() - shown) + L" autre(s) ligne(s)";
@@ -1103,127 +1298,21 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
     }
 }
 
-void BuildModule(const wstring& key, vector<TableColumn>& cols, vector<vector<wstring>>& rows) {
-    const TableColumn actions{ L"Actions", 1.6f };
-    const wstring devise = gS.devise;
-    const wstring cycleName = CycleLabel(gCycle);
-
-    if (key == L"eleves") {
-        cols = { {L"ID", 0.8f}, {L"Nom", 2.2f}, {L"Classe", 1.2f}, {L"Email", 2.4f}, {L"Sexe", 0.8f}, actions };
-        for (const auto& e : gEleves) {
-            if (e.cycle != gCycle) continue;
-            rows.push_back({ to_wstring(e.id), e.nom, e.classe, e.email, e.sexe });
-        }
-    } else if (key == L"classes") {
-        cols = { {L"ID", 0.8f}, {L"Classe", 1.5f}, {L"Annee", 1.5f}, {L"Effectif", 1.2f}, actions };
-        for (const auto& c : gClasses) {
-            if (c.cycle != gCycle) continue;
-            rows.push_back({ to_wstring(c.id), c.nom, c.annee, to_wstring(CountElevesInClasse(c.nom)) });
-        }
-    } else if (key == L"paiements") {
-        cols = { {L"Reference", 1.6f}, {L"Eleve", 2.0f}, {L"Classe", 1.0f}, {L"Type", 1.4f},
-                 {L"Montant", 1.2f}, {L"Reste", 1.2f}, {L"Statut", 1.2f}, actions };
-        for (const auto& p : gPaiements) {
-            if (p.cycle != gCycle) continue;
-            rows.push_back({ p.ref, p.eleve, p.classe, p.type,
-                to_wstring(p.montant) + L" " + devise, to_wstring(p.reste) + L" " + devise, p.statut });
-        }
-    } else if (key == L"portal" || key == L"users") {
-        cols = { {L"Identifiant", 1.8f}, {L"Role", 1.6f}, {L"Statut", 1.2f}, actions };
-        if (HasAccount()) rows.push_back({ gS.adminUser, L"Super Admin", L"Actif" });
-    } else if (key == L"cycles") {
-        cols = { {L"Code", 0.8f}, {L"Nom", 1.8f}, {L"Ordre", 0.8f}, {L"Niveaux", 1.2f}, actions };
-        rows.push_back({ L"ECO", L"Ecole", L"1", to_wstring(SplitComma(gS.classesEcole).size()) });
-        rows.push_back({ L"COL", L"College", L"2", to_wstring(SplitComma(gS.classesCollege).size()) });
-        rows.push_back({ L"LYC", L"Lycee", L"3", to_wstring(SplitComma(gS.classesLycee).size()) });
-    } else if (key == L"niveaux") {
-        cols = { {L"Niveau", 1.8f}, {L"Cycle", 1.4f}, {L"Effectif", 1.2f}, actions };
-        const vector<wstring> cyc = { L"ecole", L"college", L"lycee" };
-        for (const auto& c : cyc) {
-            for (const auto& niveau : ClassesForCycle(c)) {
-                long long n = 0;
-                for (const auto& e : gEleves) if (e.cycle == c && e.classe == niveau) ++n;
-                rows.push_back({ niveau, CycleLabel(c), to_wstring(n) });
-            }
-        }
-    } else if (key == L"salles") {
-        cols = { {L"Code", 0.8f}, {L"Nom", 2.0f}, {L"Capacite", 1.2f}, {L"Type", 1.4f}, actions };
-    } else if (key == L"periodes") {
-        cols = { {L"Periode", 2.0f}, {L"Debut", 1.4f}, {L"Fin", 1.4f}, {L"Statut", 1.2f}, actions };
-    } else if (key == L"calendrier") {
-        cols = { {L"Evenement", 2.4f}, {L"Date", 1.4f}, {L"Type", 1.4f}, {L"Statut", 1.2f}, actions };
-    } else if (key == L"inscriptions") {
-        cols = { {L"Eleve", 2.2f}, {L"Classe", 1.2f}, {L"Cycle", 1.2f}, {L"Statut", 1.2f}, actions };
-        for (const auto& e : gEleves) {
-            if (e.cycle != gCycle) continue;
-            rows.push_back({ e.nom, e.classe, cycleName, L"Inscrit" });
-        }
-    } else if (key == L"parents") {
-        cols = { {L"Nom", 2.0f}, {L"Lien", 1.2f}, {L"Telephone", 1.4f}, {L"Eleve", 2.0f}, actions };
-    } else if (key == L"presences") {
-        cols = { {L"Eleve", 2.2f}, {L"Classe", 1.2f}, {L"Date", 1.2f}, {L"Statut", 1.2f}, actions };
-    } else if (key == L"discipline") {
-        cols = { {L"Eleve", 2.2f}, {L"Date", 1.2f}, {L"Motif", 2.0f}, {L"Statut", 1.2f}, actions };
-    } else if (key == L"finance") {
-        cols = { {L"Libelle", 2.0f}, {L"Montant", 1.4f}, {L"Encaisse", 1.4f}, {L"Statut", 1.2f}, actions };
-        for (const auto& p : gPaiements) {
-            if (p.cycle != gCycle) continue;
-            rows.push_back({ p.type, to_wstring(p.montant) + L" " + devise,
-                to_wstring(p.montant - p.reste) + L" " + devise, p.statut });
-        }
-    } else if (key == L"etats") {
-        cols = { {L"Rapport", 2.2f}, {L"Periode", 1.4f}, {L"Format", 1.0f}, {L"Date", 1.4f}, actions };
-    } else if (key == L"typesFrais") {
-        cols = { {L"Code", 0.8f}, {L"Libelle", 2.0f}, {L"Montant", 1.4f}, {L"Periodicite", 1.4f}, actions };
-    } else if (key == L"carte") {
-        cols = { {L"Eleve", 2.2f}, {L"Classe", 1.2f}, {L"Matricule", 1.4f}, {L"Statut", 1.2f}, actions };
-        for (const auto& e : gEleves) {
-            if (e.cycle != gCycle) continue;
-            rows.push_back({ e.nom, e.classe, gS.matricule, L"Actif" });
-        }
-    } else if (key == L"certificats") {
-        cols = { {L"Eleve", 2.0f}, {L"Type", 1.6f}, {L"Date", 1.2f}, {L"Statut", 1.2f}, actions };
-    } else if (key == L"parametres") {
-        cols = { {L"Champ", 2.4f}, {L"Valeur", 3.0f}, actions };
-        rows.push_back({ L"Nom du logiciel", gS.appName });
-        rows.push_back({ L"Logo", gS.appLogo });
-        rows.push_back({ L"Etablissement", gS.ecole });
-        rows.push_back({ L"Matricule", gS.matricule });
-        rows.push_back({ L"Regime", gS.regime });
-        rows.push_back({ L"Devise", gS.devise });
-        rows.push_back({ L"Classes Ecole", gS.classesEcole });
-        rows.push_back({ L"Classes College", gS.classesCollege });
-        rows.push_back({ L"Classes Lycee", gS.classesLycee });
-    } else {
-        cols = { {L"Nom", 2.0f}, actions };
-    }
-}
-
-int HeaderActionFor(const wstring& page) {
-    if (page == L"eleves") return ID_ACT_ELEVE;
-    if (page == L"classes") return ID_ACT_CLASSE;
-    if (page == L"paiements") return ID_ACT_PAIEMENT;
-    if (page == L"parametres") return ID_ACT_PARAMS;
-    return 0;
-}
-
 void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom, ULONGLONG now) {
     const float x = static_cast<float>(left);
     const float y = static_cast<float>(top);
     const float w = static_cast<float>(width);
 
-    vector<TableColumn> cols;
-    vector<vector<wstring>> rows;
-    BuildModule(gCurrentPage, cols, rows);
+    const View view = BuildView(gCurrentPage, gQuery);
     int statusCol = -1;
-    for (size_t i = 0; i < cols.size(); ++i) {
-        if (wcscmp(cols[i].title, L"Statut") == 0) statusCol = static_cast<int>(i);
+    for (size_t i = 0; i < view.cols.size(); ++i) {
+        if (view.cols[i].title == L"Statut") statusCol = static_cast<int>(i);
     }
 
     const float bandA = Stage(now, 0.0f, 450.0f);
     const float filterA = Stage(now, 120.0f, 400.0f);
     const wstring title = PageLabel(gCurrentPage);
-    const wstring count = to_wstring(rows.size()) + L" element(s) - Cycle : " + CycleLabel(gCycle);
+    const wstring count = to_wstring(view.rows.size()) + L" element(s) - Cycle : " + CycleLabel(gCycle);
     FillGradientRoundRect(g, Gdiplus::RectF(x, y, w, 72.0f), 14.0f,
         Fade(Gdiplus::Color(255, 37, 99, 235), bandA), Fade(Gdiplus::Color(255, 96, 165, 250), bandA));
     ui::DrawUiText(g, title.c_str(), Gdiplus::RectF(x + 24.0f, y + 12.0f, w - 240.0f, 30.0f),
@@ -1234,11 +1323,10 @@ void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom
     const float filterY = y + 84.0f;
     ui::FillRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(Gdiplus::Color(255, 255, 255, 255), filterA * 0.7f));
     ui::StrokeRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(ui::palette::Border(), filterA), 1.5f);
-    ui::DrawUiText(g, L"Rechercher...", Gdiplus::RectF(x + 16.0f, filterY + 10.0f, w * 0.4f, 24.0f),
-        13.0f, Fade(ui::palette::TextMuted(), filterA));
 
     const float tableY = filterY + 56.0f;
-    DrawDataTable(g, x, tableY, w, static_cast<float>(bottom) - tableY, cols, rows, statusCol, now);
+    const wstring emptyText = gQuery.empty() ? L"Aucune donnee pour ce module." : L"Aucun resultat pour cette recherche.";
+    DrawDataTable(g, x, tableY, w, static_cast<float>(bottom) - tableY, view.cols, view.rows, statusCol, now, emptyText);
 }
 
 void DrawKpiCard(Gdiplus::Graphics& g, const Gdiplus::RectF& r, const wchar_t* label,
@@ -1381,96 +1469,156 @@ void UpdateAdminLabel() {
     if (gAdminBtn) SetWindowTextW(gAdminBtn, (L"Administrateur : " + gS.adminUser).c_str());
 }
 
-void AddEleve(HWND owner) {
-    const vector<wstring> classes = ClassesForCycle(gCycle);
-    if (classes.empty()) {
-        ShowWarning(owner, L"Aucune classe configuree pour ce cycle. Completez-les dans Parametres.");
-        return;
+bool EditValues(HWND owner, const wstring& title, const vector<FieldDef>& schema, vector<wstring>& values) {
+    vector<DlgField> fields;
+    vector<size_t> map;
+    for (size_t i = 0; i < schema.size(); ++i) {
+        if (schema[i].computed) continue;
+        fields.push_back(DlgField{ schema[i].label, i < values.size() ? values[i] : wstring(), false, schema[i].options });
+        map.push_back(i);
     }
-    vector<DlgField> fields{
-        DlgField{ L"Nom complet", L"", false, {} },
-        DlgField{ L"Email", L"", false, {} },
-        DlgField{ L"Sexe", L"M", false, { L"M", L"F" } },
-        DlgField{ L"Classe", classes.front(), false, classes }
-    };
-    if (!InputDialog(owner, L"Nouvel eleve", fields)) return;
-
-    const wstring nom = Trim(fields[0].value);
-    const wstring email = Trim(fields[1].value);
-    wstring sexe = Trim(fields[2].value);
-    for (auto& c : sexe) c = static_cast<wchar_t>(towupper(c));
-    const wstring classe = Trim(fields[3].value);
-
-    if (nom.empty()) { ShowWarning(owner, L"Le nom est obligatoire."); return; }
-    if (sexe != L"M" && sexe != L"F") { ShowWarning(owner, L"Le sexe doit etre M ou F."); return; }
-    if (std::find(classes.begin(), classes.end(), classe) == classes.end()) {
-        ShowWarning(owner, L"Classe inconnue pour ce cycle.");
-        return;
-    }
-    gEleves.push_back(Eleve{ gNextId++, nom, classe, email, sexe, gCycle });
-    SaveData();
-    RefreshContent();
+    if (fields.empty()) return false;
+    if (!InputDialog(owner, title.c_str(), fields)) return false;
+    values.resize(schema.size());
+    for (size_t k = 0; k < map.size(); ++k) values[map[k]] = Trim(fields[k].value);
+    return true;
 }
 
-void AddClasse(HWND owner) {
-    vector<DlgField> fields{
-        { L"Nom de la classe (ex : CP1)", L"", false },
-        { L"Annee scolaire (ex : 2026-2027)", L"", false }
-    };
-    if (!InputDialog(owner, L"Nouvelle classe", fields)) return;
-
-    const wstring nom = Trim(fields[0].value);
-    if (nom.empty()) { ShowWarning(owner, L"Le nom de la classe est obligatoire."); return; }
-    for (const auto& c : gClasses) {
-        if (c.cycle == gCycle && c.nom == nom) {
-            ShowWarning(owner, L"Cette classe existe deja pour ce cycle.");
-            return;
+bool StoreRecord(const wstring& key, long long id, bool isNew, const vector<wstring>& v, wstring& err) {
+    if (v.empty() || v[0].empty()) {
+        err = L"Le premier champ est obligatoire.";
+        return false;
+    }
+    if (key == L"eleves") {
+        wstring sexe = v[3];
+        for (auto& c : sexe) c = static_cast<wchar_t>(towupper(c));
+        if (sexe != L"M" && sexe != L"F") { err = L"Le sexe doit etre M ou F."; return false; }
+        if (isNew) {
+            gEleves.push_back(Eleve{ gNextId++, v[0], v[1], v[2], sexe, gCycle });
+        } else {
+            for (auto& e : gEleves) {
+                if (e.id == id) { e.nom = v[0]; e.classe = v[1]; e.email = v[2]; e.sexe = sexe; }
+            }
         }
+        return true;
     }
-    gClasses.push_back(Classe{ gNextId++, nom, Trim(fields[1].value), gCycle });
+    if (key == L"classes") {
+        for (const auto& c : gClasses) {
+            if (c.cycle == gCycle && c.nom == v[0] && c.id != id) {
+                err = L"Cette classe existe deja pour ce cycle.";
+                return false;
+            }
+        }
+        if (isNew) {
+            gClasses.push_back(Classe{ gNextId++, v[0], v[1], gCycle });
+        } else {
+            for (auto& c : gClasses) if (c.id == id) { c.nom = v[0]; c.annee = v[1]; }
+        }
+        return true;
+    }
+    if (key == L"paiements") {
+        wchar_t* end = nullptr;
+        const long long montant = wcstoll(v[3].c_str(), &end, 10);
+        if (v[3].empty() || *end != L'\0' || montant <= 0) {
+            err = L"Le montant doit etre un entier positif.";
+            return false;
+        }
+        const Eleve* el = nullptr;
+        for (const auto& e : gEleves) {
+            if (e.cycle == gCycle && e.nom == v[1]) { el = &e; break; }
+        }
+        if (!el) { err = L"Eleve introuvable dans ce cycle."; return false; }
+        if (isNew) {
+            gPaiements.push_back(Paiement{ v[0], el->nom, el->classe, v[2], gCycle, L"Impaye", montant, montant });
+        } else {
+            if (id < 0 || static_cast<size_t>(id) >= gPaiements.size()) { err = L"Demande introuvable."; return false; }
+            Paiement& p = gPaiements[static_cast<size_t>(id)];
+            const long long paid = p.montant - p.reste;
+            p.ref = v[0];
+            p.eleve = el->nom;
+            p.classe = el->classe;
+            p.type = v[2];
+            p.montant = montant;
+            p.reste = std::max(0LL, montant - paid);
+            p.statut = p.reste == 0 ? L"Paye" : (paid > 0 ? L"Partiel" : L"Impaye");
+        }
+        return true;
+    }
+    auto& list = gStore[key];
+    if (isNew) {
+        list.push_back(GRec{ gNextId++, gCycle, v });
+    } else {
+        for (auto& r : list) if (r.id == id) r.v = v;
+    }
+    return true;
+}
+
+void DeleteStored(const wstring& key, long long id) {
+    if (key == L"eleves") {
+        auto it = std::find_if(gEleves.begin(), gEleves.end(), [id](const Eleve& e) { return e.id == id; });
+        if (it != gEleves.end()) gEleves.erase(it);
+    } else if (key == L"classes") {
+        auto it = std::find_if(gClasses.begin(), gClasses.end(), [id](const Classe& c) { return c.id == id; });
+        if (it != gClasses.end()) gClasses.erase(it);
+    } else if (key == L"paiements") {
+        if (id >= 0 && static_cast<size_t>(id) < gPaiements.size())
+            gPaiements.erase(gPaiements.begin() + static_cast<std::ptrdiff_t>(id));
+    } else {
+        auto& list = gStore[key];
+        auto it = std::find_if(list.begin(), list.end(), [id](const GRec& r) { return r.id == id; });
+        if (it != list.end()) list.erase(it);
+    }
+}
+
+void AddRecordFlow(HWND owner, const wstring& key) {
+    const vector<FieldDef> schema = SchemaFor(key);
+    vector<wstring> values(schema.size());
+    for (size_t i = 0; i < schema.size(); ++i) {
+        if (!schema[i].options.empty()) values[i] = schema[i].options.front();
+    }
+    if (!EditValues(owner, L"Nouveau - " + PageLabel(key), schema, values)) return;
+    wstring err;
+    if (!StoreRecord(key, -1, true, values, err)) {
+        ShowWarning(owner, err.c_str());
+        return;
+    }
     SaveData();
     RefreshContent();
 }
 
-void AddPaiement(HWND owner) {
-    vector<wstring> names;
-    for (const auto& e : gEleves) if (e.cycle == gCycle) names.push_back(e.nom);
-    if (names.empty()) {
-        ShowWarning(owner, L"Aucun eleve dans ce cycle. Ajoutez d'abord un eleve.");
+void EditRecordFlow(HWND owner, const wstring& key, const RowView& row) {
+    const vector<FieldDef> schema = SchemaFor(key);
+    vector<wstring> values = row.cells;
+    values.resize(schema.size());
+    if (!EditValues(owner, L"Modifier - " + PageLabel(key), schema, values)) return;
+    wstring err;
+    if (!StoreRecord(key, row.id, false, values, err)) {
+        ShowWarning(owner, err.c_str());
         return;
     }
-    vector<DlgField> fields{
-        DlgField{ L"Reference (ex : GPA-2026-001)", L"", false, {} },
-        DlgField{ L"Eleve", names.front(), false, names },
-        DlgField{ L"Type de frais", L"Inscription", false,
-            { L"Inscription", L"Scolarite", L"Cantine", L"Transport", L"Autre" } },
-        DlgField{ L"Montant (entier)", L"", false, {} }
-    };
-    if (!InputDialog(owner, L"Nouvelle demande de paiement", fields)) return;
-
-    const wstring ref = Trim(fields[0].value);
-    const wstring nomEleve = Trim(fields[1].value);
-    const wstring type = Trim(fields[2].value);
-    const wstring montantTxt = Trim(fields[3].value);
-
-    wchar_t* end = nullptr;
-    const long long montant = wcstoll(montantTxt.c_str(), &end, 10);
-    if (ref.empty() || type.empty() || montantTxt.empty() || *end != L'\0' || montant <= 0) {
-        ShowWarning(owner, L"Reference, type et montant (entier positif) sont obligatoires.");
-        return;
-    }
-    const Eleve* eleve = nullptr;
-    for (const auto& e : gEleves) {
-        if (e.cycle == gCycle && e.nom == nomEleve) { eleve = &e; break; }
-    }
-    if (!eleve) {
-        ShowWarning(owner, L"Eleve introuvable dans ce cycle.");
-        return;
-    }
-    gPaiements.push_back(Paiement{ ref, eleve->nom, eleve->classe, type, gCycle, L"Impaye", montant, montant });
     SaveData();
     RefreshContent();
 }
+
+void DeleteRecordFlow(HWND owner, const wstring& key, const RowView& row) {
+    if (MessageBoxW(owner, L"Supprimer cet element ?", PageLabel(key).c_str(), MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    DeleteStored(key, row.id);
+    SaveData();
+    RefreshContent();
+}
+
+void ShowDetails(HWND owner, const wstring& key, const RowView& row) {
+    const vector<FieldDef> schema = SchemaFor(key);
+    wstring text;
+    for (size_t i = 0; i < schema.size() && i < row.cells.size(); ++i) {
+        text += schema[i].label + L" : " + row.cells[i] + L"\n";
+    }
+    MessageBoxW(owner, text.c_str(), PageLabel(key).c_str(), MB_OK | MB_ICONINFORMATION);
+}
+
+void AddEleve(HWND owner) { AddRecordFlow(owner, L"eleves"); }
+void AddClasse(HWND owner) { AddRecordFlow(owner, L"classes"); }
+void AddPaiement(HWND owner) { AddRecordFlow(owner, L"paiements"); }
 
 void OpenParams(HWND owner) {
     vector<DlgField> fields{
@@ -1523,6 +1671,9 @@ void CreateMainControls(HWND hwnd) {
     }
     gLogout = CreateCtl(L"BUTTON", L"Deconnexion", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_LOGOUT);
 
+    gSearch = CreateCtl(L"EDIT", L"", WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, ID_SEARCH);
+    gAddBtn = CreateCtl(L"BUTTON", L"", WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_ACT_NEW);
+
     gContent = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL |
         ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 0, 0, 0, 0, hwnd, 0);
 
@@ -1561,26 +1712,45 @@ void LayoutMain(HWND hwnd) {
     const int actionsY = height - 44;
     MoveWindow(gContent, left, contentTop, width - left - kMargin, actionsY - contentTop - kMargin, TRUE);
     const bool dash = gCurrentPage == L"dashboard";
-    const int headerAction = HeaderActionFor(gCurrentPage);
     int x = left;
     for (HWND b : gActionBtns) {
-        const int id = GetDlgCtrlID(b);
         if (dash) {
             ShowWindow(b, SW_SHOW);
             MoveWindow(b, x, actionsY, kActionButtonWidth, 32, TRUE);
             x += kActionSpacing;
-        } else if (id == headerAction) {
-            ShowWindow(b, SW_SHOW);
-            MoveWindow(b, width - kMargin - 190, kTopbarHeight + 8 + 20, 180, 32, TRUE);
         } else {
             ShowWindow(b, SW_HIDE);
         }
+    }
+    const bool data = IsDataPage();
+    ShowWindow(gAddBtn, data ? SW_SHOW : SW_HIDE);
+    ShowWindow(gSearch, data ? SW_SHOW : SW_HIDE);
+    if (data) {
+        const wstring label = gCurrentPage == L"eleves" ? L"+ Nouvel eleve"
+            : gCurrentPage == L"classes" ? L"+ Nouvelle classe"
+            : gCurrentPage == L"paiements" ? L"+ Nouvelle demande"
+            : gCurrentPage == L"parametres" ? L"Parametres"
+            : L"+ Nouveau";
+        SetWindowTextW(gAddBtn, label.c_str());
+        MoveWindow(gAddBtn, width - kMargin - 190, kTopbarHeight + 28, 180, 32, TRUE);
+        MoveWindow(gSearch, left + 16, kTopbarHeight + 8 + 84 + 10,
+            static_cast<int>((width - left - kMargin - 32) * 0.4f), 24, TRUE);
     }
     InvalidateRect(hwnd, nullptr, TRUE);
     RedrawChrome();
 }
 
 void OnCommand(HWND hwnd, int id, int code) {
+    if (id == ID_SEARCH && code == EN_CHANGE) {
+        gQuery = ReadWindowText(gSearch);
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return;
+    }
+    if (id == ID_ACT_NEW) {
+        if (gCurrentPage == L"parametres") OpenParams(hwnd);
+        else AddRecordFlow(hwnd, gCurrentPage);
+        return;
+    }
     if (id == ID_TOGGLE) {
         gSidebarVisible = !gSidebarVisible;
         LayoutMain(hwnd);
@@ -1611,6 +1781,8 @@ void OnCommand(HWND hwnd, int id, int code) {
     }
     if (id >= ID_MENU_BASE && id < ID_MENU_BASE + kPageCount) {
         gCurrentPage = kPages[id - ID_MENU_BASE].key;
+        SetWindowTextW(gSearch, L"");
+        gQuery.clear();
         if (gCurrentPage == L"parametres") OpenParams(hwnd);
         RefreshContent();
         return;
@@ -1698,7 +1870,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             kind = (key == gCurrentPage) ? ui::ButtonKind::NavActive : ui::ButtonKind::Nav;
         } else if (id == ID_LOGOUT) {
             kind = ui::ButtonKind::Nav;
-        } else if (id == ID_ACT_ELEVE || id == ID_ACT_CLASSE || id == ID_ACT_PAIEMENT || id == ID_ACT_PARAMS) {
+        } else if (id == ID_ACT_ELEVE || id == ID_ACT_CLASSE || id == ID_ACT_PAIEMENT || id == ID_ACT_PARAMS || id == ID_ACT_NEW) {
             kind = ui::ButtonKind::Primary;
         }
         ui::DrawButton(item, kind);
@@ -1731,6 +1903,40 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
+    case WM_LBUTTONDOWN: {
+        if (!IsDataPage()) return 0;
+        const int mx = static_cast<short>(LOWORD(lParam));
+        const int my = static_cast<short>(HIWORD(lParam));
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
+        const int firstRow = kTopbarHeight + 8 + 84 + 56 + 40 + 4;
+        if (mx < left || mx > rc.right - kMargin || my < firstRow || my >= rc.bottom - 44 - kMargin) return 0;
+        const int index = (my - firstRow) / 38;
+        const View view = BuildView(gCurrentPage, gQuery);
+        if (index < 0 || static_cast<size_t>(index) >= view.rows.size()) return 0;
+        vector<float> xs;
+        vector<float> widths;
+        TableGeometry(view.cols, static_cast<float>(left), static_cast<float>(rc.right - left - kMargin), xs, widths);
+        const float ax = xs.back();
+        const float fx = static_cast<float>(mx);
+        if (fx < ax || fx > ax + 230.0f) return 0;
+        const RowView row = view.rows[static_cast<size_t>(index)];
+        if (gCurrentPage == L"parametres" && fx >= ax + 56.0f && fx < ax + 128.0f) {
+            OpenParams(hwnd);
+            return 0;
+        }
+        if (fx < ax + 52.0f) {
+            ShowDetails(hwnd, gCurrentPage, row);
+        } else if (fx < ax + 128.0f) {
+            if (!row.editable) ShowWarning(hwnd, L"Element calcule automatiquement : modifiez-le depuis son module d'origine.");
+            else EditRecordFlow(hwnd, gCurrentPage, row);
+        } else {
+            if (!row.editable) ShowWarning(hwnd, L"Element calcule automatiquement : supprimez-le depuis son module d'origine.");
+            else DeleteRecordFlow(hwnd, gCurrentPage, row);
+        }
+        return 0;
+    }
     case WM_TIMER:
         if (wParam == kAnimTimer) {
             if (GetTickCount64() - gAnimStart < kAnimMs) {
