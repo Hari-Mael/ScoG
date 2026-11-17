@@ -813,6 +813,70 @@ wstring BuildPageText() {
     return ss.str();
 }
 
+void DrawKpiCard(Gdiplus::Graphics& g, const Gdiplus::RectF& r, const wchar_t* label,
+                 const wstring& value, const wchar_t* sub, const Gdiplus::Color& accent) {
+    ui::FillRoundRect(g, r, 12.0f, ui::palette::Card());
+    ui::StrokeRoundRect(g, r, 12.0f, ui::palette::Border());
+    ui::FillRoundRect(g, Gdiplus::RectF(r.X + r.Width - 40.0f, r.Y + 16.0f, 22.0f, 22.0f), 11.0f, accent);
+    ui::DrawUiText(g, label, Gdiplus::RectF(r.X + 16.0f, r.Y + 14.0f, r.Width - 60.0f, 20.0f),
+        13.0f, ui::palette::TextMuted());
+    ui::DrawUiText(g, value.c_str(), Gdiplus::RectF(r.X + 16.0f, r.Y + 38.0f, r.Width - 32.0f, 40.0f),
+        28.0f, ui::palette::TextMain(), true);
+    ui::DrawUiText(g, sub, Gdiplus::RectF(r.X + 16.0f, r.Y + 82.0f, r.Width - 32.0f, 18.0f),
+        12.0f, ui::palette::TextMuted());
+}
+
+void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width) {
+    const float x = static_cast<float>(left);
+    const float y = static_cast<float>(top);
+    const float w = static_cast<float>(width);
+
+    const wstring subtitle = gS.ecole.empty()
+        ? wstring(L"Configurez l'etablissement dans Parametres.")
+        : gS.ecole;
+    ui::FillRoundRect(g, Gdiplus::RectF(x, y, w, 96.0f), 14.0f, Gdiplus::Color(255, 30, 58, 138));
+    ui::DrawUiText(g, L"Tableau de bord", Gdiplus::RectF(x + 24.0f, y + 16.0f, w - 48.0f, 32.0f),
+        22.0f, ui::palette::White(), true);
+    ui::DrawUiText(g, subtitle.c_str(), Gdiplus::RectF(x + 24.0f, y + 52.0f, w - 48.0f, 22.0f),
+        14.0f, Gdiplus::Color(255, 190, 210, 255));
+
+    long long nbPaiements = 0;
+    long long reste = 0;
+    for (const auto& p : gPaiements) if (p.cycle == gCycle) { ++nbPaiements; reste += p.reste; }
+    const long long nbEleves = CountElevesOfCycle();
+    const size_t nbClasses = ClassesForCycle(gCycle).size();
+
+    const float gap = 16.0f;
+    const float cardW = (w - 3.0f * gap) / 4.0f;
+    const float cardY = y + 116.0f;
+    const float cardH = 110.0f;
+    DrawKpiCard(g, Gdiplus::RectF(x, cardY, cardW, cardH), L"Eleves",
+        to_wstring(nbEleves), L"eleve(s) dans le cycle", ui::palette::Accent());
+    DrawKpiCard(g, Gdiplus::RectF(x + (cardW + gap), cardY, cardW, cardH), L"Classes",
+        to_wstring(nbClasses), L"classe(s) configurees", ui::palette::Success());
+    DrawKpiCard(g, Gdiplus::RectF(x + 2.0f * (cardW + gap), cardY, cardW, cardH), L"Demandes de paiement",
+        to_wstring(nbPaiements), L"demande(s) enregistree(s)", ui::palette::Warning());
+    DrawKpiCard(g, Gdiplus::RectF(x + 3.0f * (cardW + gap), cardY, cardW, cardH), L"Reste a percevoir",
+        to_wstring(reste) + L" " + gS.devise, L"montant restant du", ui::palette::Danger());
+
+    const vector<wstring> classes = ClassesForCycle(gCycle);
+    const float listY = cardY + cardH + 24.0f;
+    const float rowH = 28.0f;
+    const float listH = 56.0f + static_cast<float>(classes.size()) * rowH;
+    ui::FillRoundRect(g, Gdiplus::RectF(x, listY, w, listH), 12.0f, ui::palette::Card());
+    ui::StrokeRoundRect(g, Gdiplus::RectF(x, listY, w, listH), 12.0f, ui::palette::Border());
+    ui::DrawUiText(g, L"Repartition par classe", Gdiplus::RectF(x + 20.0f, listY + 14.0f, w - 40.0f, 24.0f),
+        16.0f, ui::palette::TextMain(), true);
+    float rowY = listY + 48.0f;
+    for (const auto& c : classes) {
+        const wstring count = to_wstring(CountElevesInClasse(c)) + L" eleve(s)";
+        ui::DrawUiText(g, c.c_str(), Gdiplus::RectF(x + 20.0f, rowY, w * 0.5f, rowH), 14.0f, ui::palette::TextMain());
+        ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + w * 0.5f, rowY, w * 0.5f - 20.0f, rowH),
+            14.0f, ui::palette::TextMuted(), false, false);
+        rowY += rowH;
+    }
+}
+
 void RedrawChrome() {
     if (!gMain) return;
     InvalidateRect(gMain, nullptr, TRUE);
@@ -827,6 +891,7 @@ void RedrawChrome() {
 void RefreshContent() {
     SetWindowTextW(gTitle, PageLabel(gCurrentPage).c_str());
     SetWindowTextW(gContent, BuildPageText().c_str());
+    if (gContent) ShowWindow(gContent, gCurrentPage == L"dashboard" ? SW_HIDE : SW_SHOW);
     RedrawChrome();
 }
 
@@ -1092,6 +1157,11 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             Gdiplus::SolidBrush sidebar(ui::palette::Sidebar());
             g.FillRectangle(&sidebar, 0.0f, static_cast<float>(kTopbarHeight), static_cast<float>(kSidebarWidth),
                 h - static_cast<float>(kTopbarHeight));
+        }
+        if (gCurrentPage == L"dashboard") {
+            const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
+            const int top = kTopbarHeight + 8;
+            DrawDashboard(g, left, top, rc.right - left - kMargin);
         }
         EndPaint(hwnd, &ps);
         return 0;
