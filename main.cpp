@@ -922,6 +922,7 @@ constexpr ULONGLONG kAnimMs = 2600;
 int gHoverRow = -1;
 float gAddHoverT = 0.0f;
 constexpr UINT_PTR kHoverTimer = 2;
+HBRUSH gBarBrush = nullptr;
 ULONGLONG gAnimStart = 0;
 
 float Clamp01(float v) {
@@ -1479,6 +1480,35 @@ void UpdateAddHover() {
     if (std::fabs(gAddHoverT - before) > 0.001f) InvalidateRect(gAddBtn, nullptr, FALSE);
 }
 
+void DrawTopPill(const DRAWITEMSTRUCT* item, const Gdiplus::Color& fill, bool avatar, const wchar_t* initial) {
+    Gdiplus::Graphics g(item->hDC);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
+    const float bw = static_cast<float>(item->rcItem.right - item->rcItem.left);
+    const float bh = static_cast<float>(item->rcItem.bottom - item->rcItem.top);
+    Gdiplus::SolidBrush corner(Gdiplus::Color(255, 252, 252, 246));
+    g.FillRectangle(&corner, 0.0f, 0.0f, bw, bh);
+
+    const bool pressed = (item->itemState & ODS_SELECTED) != 0;
+    const float radius = (bh - 2.0f) / 2.0f;
+    const Gdiplus::RectF r(1.0f, 1.0f, bw - 2.0f, bh - 2.0f);
+    ui::FillRoundRect(g, r, radius, pressed ? Gdiplus::Color(255, 205, 232, 90) : fill);
+    ui::StrokeRoundRect(g, r, radius, Gdiplus::Color(255, 225, 225, 205), 1.0f);
+
+    float tx = 14.0f;
+    if (avatar) {
+        const float d = bh - 10.0f;
+        const Gdiplus::RectF av(5.0f, 5.0f, d, d);
+        ui::FillRoundRect(g, av, d / 2.0f, Gdiplus::Color(255, 217, 242, 107));
+        ui::DrawUiText(g, initial, av, 12.0f, Gdiplus::Color(255, 30, 35, 20), true, true);
+        tx = bh + 4.0f;
+    }
+    wchar_t text[128] = { 0 };
+    GetWindowTextW(item->hwndItem, text, 128);
+    ui::DrawUiText(g, text, Gdiplus::RectF(tx, 0.0f, bw - tx - 10.0f, bh), 14.0f,
+        Gdiplus::Color(255, 20, 28, 20), false, !avatar);
+}
+
 void StartAnim() {
     gAnimStart = GetTickCount64();
     if (gMain) {
@@ -1700,6 +1730,7 @@ void OpenParams(HWND owner) {
 }
 
 void CreateMainControls(HWND hwnd) {
+    if (!gBarBrush) gBarBrush = CreateSolidBrush(RGB(252, 252, 246));
     gMenuBtns.clear();
     gActionBtns.clear();
 
@@ -1943,15 +1974,15 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         g.DrawImage(gBackdrop, 0, 0);
 
         const Gdiplus::RectF bar(8.0f, 6.0f, w - 16.0f, 40.0f);
-        for (int k = 3; k >= 1; --k) {
-            ui::FillRoundRect(g, Gdiplus::RectF(bar.X + k, bar.Y + k * 2.0f, bar.Width, bar.Height), 14.0f,
-                Gdiplus::Color(static_cast<BYTE>(14 - k * 3), 30, 58, 138));
+        for (int k = 4; k >= 1; --k) {
+            ui::FillRoundRect(g, Gdiplus::RectF(bar.X, bar.Y + k * 1.5f, bar.Width, bar.Height), 16.0f,
+                Gdiplus::Color(static_cast<BYTE>(12 - k * 2), 60, 50, 20));
         }
-        ui::FillRoundRect(g, bar, 14.0f, Gdiplus::Color(178, 255, 255, 255));
-        ui::StrokeRoundRect(g, bar, 14.0f, Gdiplus::Color(210, 255, 255, 255), 1.5f);
-        Gdiplus::LinearGradientBrush accent(Gdiplus::RectF(bar.X, bar.Y + bar.Height - 3.0f, bar.Width, 3.0f),
-            Gdiplus::Color(255, 37, 99, 235), Gdiplus::Color(255, 96, 165, 250), Gdiplus::LinearGradientModeHorizontal);
-        g.FillRectangle(&accent, bar.X + 14.0f, bar.Y + bar.Height - 3.0f, bar.Width - 28.0f, 3.0f);
+        ui::FillRoundRect(g, bar, 16.0f, Gdiplus::Color(255, 252, 252, 246));
+        ui::StrokeRoundRect(g, bar, 16.0f, Gdiplus::Color(255, 236, 236, 220), 1.0f);
+        Gdiplus::LinearGradientBrush lime(Gdiplus::RectF(bar.X, bar.Y + bar.Height - 3.0f, bar.Width, 3.0f),
+            Gdiplus::Color(255, 217, 242, 107), Gdiplus::Color(255, 190, 230, 60), Gdiplus::LinearGradientModeHorizontal);
+        g.FillRectangle(&lime, bar.X + 20.0f, bar.Y + bar.Height - 4.0f, bar.Width - 40.0f, 3.0f);
         if (gSidebarVisible) {
             Gdiplus::SolidBrush sidebar(ui::palette::Sidebar());
             g.FillRectangle(&sidebar, 0.0f, static_cast<float>(kTopbarHeight), static_cast<float>(kSidebarWidth),
@@ -1990,15 +2021,24 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
         }
         SetBkMode(hdc, OPAQUE);
-        SetBkColor(hdc, RGB(255, 255, 255));
+        SetBkColor(hdc, RGB(252, 252, 246));
         SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
-        return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
+        return reinterpret_cast<LRESULT>(gBarBrush);
     }
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
         if (item->CtlType != ODT_BUTTON) break;
         if (item->CtlID == ID_ACT_NEW) {
             DrawAddButton(item, gAddHoverT, (item->itemState & ODS_SELECTED) != 0);
+            return TRUE;
+        }
+        if (item->CtlID == ID_HOME) {
+            DrawTopPill(item, Gdiplus::Color(255, 217, 242, 107), false, L"");
+            return TRUE;
+        }
+        if (item->CtlID == ID_ADMIN) {
+            const wstring ini = gS.adminUser.empty() ? wstring(L"A") : wstring(1, static_cast<wchar_t>(towupper(gS.adminUser[0])));
+            DrawTopPill(item, Gdiplus::Color(255, 255, 255, 255), true, ini.c_str());
             return TRUE;
         }
         const int id = static_cast<int>(item->CtlID);
