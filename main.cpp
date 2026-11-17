@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cwchar>
 #include <cmath>
+#include <cstring>
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
@@ -1042,12 +1043,87 @@ void FillGradientRoundRect(Gdiplus::Graphics& g, const Gdiplus::RectF& r, float 
     g.FillPath(&brush, &path);
 }
 
-void DrawAmbient(Gdiplus::Graphics& g, float w, float h, ULONGLONG now) {
-    const float t = static_cast<float>(now % 600000) / 1000.0f;
-    Gdiplus::SolidBrush blob1(Gdiplus::Color(54, 196, 181, 253));
-    g.FillEllipse(&blob1, w * 0.62f + 40.0f * std::sin(t * 0.7f), -90.0f + 20.0f * std::cos(t * 0.5f), 420.0f, 420.0f);
-    Gdiplus::SolidBrush blob2(Gdiplus::Color(40, 233, 213, 255));
-    g.FillEllipse(&blob2, -120.0f + 30.0f * std::cos(t * 0.6f), h * 0.6f + 25.0f * std::sin(t * 0.4f), 380.0f, 380.0f);
+Gdiplus::Bitmap* gBackdrop = nullptr;
+Gdiplus::Bitmap* gBack = nullptr;
+int gBackdropW = 0;
+int gBackdropH = 0;
+
+void BoxBlur(vector<unsigned char>& px, int w, int h, int r) {
+    if (r <= 0) return;
+    const int div = 2 * r + 1;
+    vector<unsigned char> tmp(px.size());
+    for (int y = 0; y < h; ++y) {
+        for (int c = 0; c < 4; ++c) {
+            int sum = 0;
+            for (int k = -r; k <= r; ++k) sum += px[(y * w + std::clamp(k, 0, w - 1)) * 4 + c];
+            for (int x = 0; x < w; ++x) {
+                tmp[(y * w + x) * 4 + c] = static_cast<unsigned char>(sum / div);
+                const int out = std::clamp(x - r, 0, w - 1);
+                const int in = std::clamp(x + r + 1, 0, w - 1);
+                sum += px[(y * w + in) * 4 + c] - px[(y * w + out) * 4 + c];
+            }
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        for (int c = 0; c < 4; ++c) {
+            int sum = 0;
+            for (int k = -r; k <= r; ++k) sum += tmp[(std::clamp(k, 0, h - 1) * w + x) * 4 + c];
+            for (int y = 0; y < h; ++y) {
+                px[(y * w + x) * 4 + c] = static_cast<unsigned char>(sum / div);
+                const int out = std::clamp(y - r, 0, h - 1);
+                const int in = std::clamp(y + r + 1, 0, h - 1);
+                sum += tmp[(in * w + x) * 4 + c] - tmp[(out * w + x) * 4 + c];
+            }
+        }
+    }
+}
+
+void BuildBackdrop(int w, int h) {
+    delete gBackdrop;
+    gBackdrop = nullptr;
+    const int sw = std::max(1, w / 4);
+    const int sh = std::max(1, h / 4);
+    Gdiplus::Bitmap small(sw, sh, Gdiplus::PixelFormat32bppARGB);
+    {
+        Gdiplus::Graphics gs(&small);
+        const float fw = static_cast<float>(sw);
+        const float fh = static_cast<float>(sh);
+        Gdiplus::LinearGradientBrush base(Gdiplus::RectF(0.0f, 0.0f, fw, fh),
+            Gdiplus::Color(255, 244, 248, 255), Gdiplus::Color(255, 222, 234, 252), Gdiplus::LinearGradientModeVertical);
+        gs.FillRectangle(&base, 0.0f, 0.0f, fw, fh);
+        Gdiplus::SolidBrush blob1(Gdiplus::Color(170, 37, 99, 235));
+        gs.FillEllipse(&blob1, fw * 0.55f, -fh * 0.25f, fw * 0.55f, fh * 0.75f);
+        Gdiplus::SolidBrush blob2(Gdiplus::Color(140, 96, 165, 250));
+        gs.FillEllipse(&blob2, -fw * 0.15f, fh * 0.5f, fw * 0.5f, fh * 0.65f);
+        Gdiplus::SolidBrush blob3(Gdiplus::Color(120, 255, 255, 255));
+        gs.FillEllipse(&blob3, fw * 0.3f, fh * 0.1f, fw * 0.3f, fh * 0.35f);
+    }
+
+    Gdiplus::Rect rect(0, 0, sw, sh);
+    Gdiplus::BitmapData data;
+    small.LockBits(&rect, Gdiplus::ImageLockModeRead | Gdiplus::ImageLockModeWrite,
+        Gdiplus::PixelFormat32bppARGB, &data);
+    vector<unsigned char> px(static_cast<size_t>(sw) * static_cast<size_t>(sh) * 4);
+    for (int y = 0; y < sh; ++y) {
+        std::memcpy(&px[static_cast<size_t>(y) * sw * 4],
+            static_cast<const unsigned char*>(data.Scan0) + static_cast<size_t>(y) * data.Stride,
+            static_cast<size_t>(sw) * 4);
+    }
+    BoxBlur(px, sw, sh, 3);
+    BoxBlur(px, sw, sh, 3);
+    BoxBlur(px, sw, sh, 2);
+    for (int y = 0; y < sh; ++y) {
+        std::memcpy(static_cast<unsigned char*>(data.Scan0) + static_cast<size_t>(y) * data.Stride,
+            &px[static_cast<size_t>(y) * sw * 4], static_cast<size_t>(sw) * 4);
+    }
+    small.UnlockBits(&data);
+
+    gBackdrop = new Gdiplus::Bitmap(w, h, Gdiplus::PixelFormat32bppPARGB);
+    Gdiplus::Graphics gf(gBackdrop);
+    gf.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBilinear);
+    gf.DrawImage(&small, 0, 0, w, h);
+    gBackdropW = w;
+    gBackdropH = h;
 }
 
 void DrawKpiCard(Gdiplus::Graphics& g, const Gdiplus::RectF& r, const wchar_t* label,
@@ -1055,7 +1131,7 @@ void DrawKpiCard(Gdiplus::Graphics& g, const Gdiplus::RectF& r, const wchar_t* l
     if (a <= 0.0f) return;
     const Gdiplus::RectF shadow(r.X + 3.0f, r.Y + 6.0f, r.Width, r.Height);
     ui::FillRoundRect(g, shadow, 14.0f, Fade(Gdiplus::Color(255, 120, 90, 200), a * 0.12f));
-    ui::FillRoundRect(g, r, 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), a * 0.78f));
+    ui::FillRoundRect(g, r, 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), a * 0.6f));
     ui::StrokeRoundRect(g, r, 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), a * 0.9f), 1.5f);
     ui::FillRoundRect(g, Gdiplus::RectF(r.X + r.Width - 40.0f, r.Y + 16.0f, 22.0f, 22.0f), 11.0f, Fade(accent, a));
     ui::DrawUiText(g, label, Gdiplus::RectF(r.X + 16.0f, r.Y + 14.0f, r.Width - 60.0f, 20.0f),
@@ -1076,7 +1152,7 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width, ULONGLONG
         ? wstring(L"Configurez l'etablissement dans Parametres.")
         : gS.ecole;
     FillGradientRoundRect(g, Gdiplus::RectF(x, y, w, 96.0f), 16.0f,
-        Fade(Gdiplus::Color(255, 124, 58, 237), headerA), Fade(Gdiplus::Color(255, 192, 132, 252), headerA));
+        Fade(Gdiplus::Color(255, 37, 99, 235), headerA), Fade(Gdiplus::Color(255, 96, 165, 250), headerA));
     ui::DrawUiText(g, L"Tableau de bord", Gdiplus::RectF(x + 24.0f, y + 16.0f, w - 48.0f, 32.0f),
         22.0f, Fade(ui::palette::White(), headerA), true);
     ui::DrawUiText(g, subtitle.c_str(), Gdiplus::RectF(x + 24.0f, y + 52.0f, w - 48.0f, 22.0f),
@@ -1096,9 +1172,9 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width, ULONGLONG
         Gdiplus::Color accent;
     };
     const Kpi kpis[4] = {
-        { L"Eleves", nbEleves, L"eleve(s) dans le cycle", Gdiplus::Color(255, 124, 58, 237) },
+        { L"Eleves", nbEleves, L"eleve(s) dans le cycle", ui::palette::Accent() },
         { L"Classes", nbClasses, L"classe(s) configurees", ui::palette::Success() },
-        { L"Paiements", nbPaiements, L"demande(s) enregistree(s)", Gdiplus::Color(255, 168, 85, 247) },
+        { L"Paiements", nbPaiements, L"demande(s) enregistree(s)", ui::palette::Warning() },
         { L"Reste a percevoir", reste, L"montant restant du", ui::palette::Danger() },
     };
 
@@ -1120,7 +1196,7 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width, ULONGLONG
     const float rowH = 28.0f;
     const float listH = 56.0f + static_cast<float>(classes.size()) * rowH;
     const float listA = Stage(now, 450.0f, 500.0f);
-    ui::FillRoundRect(g, Gdiplus::RectF(x, listY, w, listH), 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), listA * 0.78f));
+    ui::FillRoundRect(g, Gdiplus::RectF(x, listY, w, listH), 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), listA * 0.6f));
     ui::StrokeRoundRect(g, Gdiplus::RectF(x, listY, w, listH), 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), listA * 0.9f), 1.5f);
     ui::DrawUiText(g, L"Repartition par classe", Gdiplus::RectF(x + 20.0f, listY + 14.0f, w - 40.0f, 24.0f),
         16.0f, Fade(ui::palette::TextMain(), listA), true);
@@ -1140,7 +1216,7 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width, ULONGLONG
         const float bw = barMaxW * static_cast<float>(count) / static_cast<float>(maxCount) * a;
         if (bw > 1.0f) {
             FillGradientRoundRect(g, Gdiplus::RectF(barX, rowY + 10.0f, bw, 8.0f), 4.0f,
-                Fade(Gdiplus::Color(255, 124, 58, 237), listA), Fade(Gdiplus::Color(255, 192, 132, 252), listA));
+                Fade(Gdiplus::Color(255, 37, 99, 235), listA), Fade(Gdiplus::Color(255, 96, 165, 250), listA));
         }
         const wstring countText = to_wstring(count) + L" eleve(s)";
         ui::DrawUiText(g, countText.c_str(), Gdiplus::RectF(barX + barMaxW + 10.0f, rowY, 110.0f, rowH),
@@ -1434,16 +1510,20 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc;
         GetClientRect(hwnd, &rc);
-        Gdiplus::Bitmap buffer(rc.right > 0 ? rc.right : 1, rc.bottom > 0 ? rc.bottom : 1, PixelFormat32bppPARGB);
-        Gdiplus::Graphics g(&buffer);
+        const int cw = rc.right > 0 ? rc.right : 1;
+        const int ch = rc.bottom > 0 ? rc.bottom : 1;
+        if (!gBackdrop || gBackdropW != cw || gBackdropH != ch) BuildBackdrop(cw, ch);
+        if (!gBack || static_cast<int>(gBack->GetWidth()) != cw || static_cast<int>(gBack->GetHeight()) != ch) {
+            delete gBack;
+            gBack = new Gdiplus::Bitmap(cw, ch, Gdiplus::PixelFormat32bppPARGB);
+        }
+        Gdiplus::Graphics g(gBack);
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        const float w = static_cast<float>(rc.right);
-        const float h = static_cast<float>(rc.bottom);
-        Gdiplus::LinearGradientBrush background(Gdiplus::RectF(0.0f, 0.0f, w, h),
-            Gdiplus::Color(255, 246, 244, 255), Gdiplus::Color(255, 236, 230, 252), Gdiplus::LinearGradientModeVertical);
-        g.FillRectangle(&background, 0.0f, 0.0f, w, h);
-        DrawAmbient(g, w, h, GetTickCount64());
-        Gdiplus::SolidBrush topbar(ui::palette::Card());
+        const float w = static_cast<float>(cw);
+        const float h = static_cast<float>(ch);
+        g.DrawImage(gBackdrop, 0, 0);
+
+        Gdiplus::SolidBrush topbar(Gdiplus::Color(222, 255, 255, 255));
         g.FillRectangle(&topbar, 0.0f, 0.0f, w, static_cast<float>(kTopbarHeight));
         Gdiplus::Pen separator(ui::palette::Border());
         g.DrawLine(&separator, 0.0f, static_cast<float>(kTopbarHeight), w, static_cast<float>(kTopbarHeight));
@@ -1455,15 +1535,15 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (gCurrentPage == L"dashboard") {
             const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
             const int top = kTopbarHeight + 8;
-            DrawDashboard(g, left, top, rc.right - left - kMargin, GetTickCount64());
+            DrawDashboard(g, left, top, cw - left - kMargin, GetTickCount64());
         }
         if (IsDataPage()) {
             const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
             const int top = kTopbarHeight + 8;
-            DrawDataPage(g, left, top, rc.right - left - kMargin, rc.bottom - 44 - kMargin);
+            DrawDataPage(g, left, top, cw - left - kMargin, ch - 44 - kMargin);
         }
         Gdiplus::Graphics screen(hdc);
-        screen.DrawImage(&buffer, 0, 0);
+        screen.DrawImage(gBack, 0, 0);
         EndPaint(hwnd, &ps);
         return 0;
     }
