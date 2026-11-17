@@ -601,9 +601,10 @@ LRESULT CALLBACK InputDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     }
     case WM_CTLCOLORSTATIC: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
-        SetBkMode(hdc, TRANSPARENT);
+        SetBkMode(hdc, OPAQUE);
+        SetBkColor(hdc, RGB(255, 255, 255));
         SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
-        return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
     }
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
@@ -737,9 +738,10 @@ LRESULT CALLBACK LoginProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     case WM_CTLCOLORSTATIC: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
-        SetBkMode(hdc, TRANSPARENT);
+        SetBkMode(hdc, OPAQUE);
+        SetBkColor(hdc, RGB(255, 255, 255));
         SetTextColor(hdc, ui::ToColorRef(ui::palette::TextMain()));
-        return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
     }
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
