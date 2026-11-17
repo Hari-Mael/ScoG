@@ -919,6 +919,8 @@ wstring BuildPageText() {
 constexpr UINT_PTR kAnimTimer = 1;
 constexpr ULONGLONG kAnimMs = 2600;
 int gHoverRow = -1;
+float gAddHoverT = 0.0f;
+constexpr UINT_PTR kHoverTimer = 2;
 ULONGLONG gAnimStart = 0;
 
 float Clamp01(float v) {
@@ -1428,6 +1430,54 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width, ULONGLONG
     }
 }
 
+Gdiplus::Color Mix(const Gdiplus::Color& a, const Gdiplus::Color& b, float t) {
+    t = Clamp01(t);
+    auto lerp = [t](int x, int y) { return static_cast<BYTE>(static_cast<float>(x) + static_cast<float>(y - x) * t); };
+    return Gdiplus::Color(lerp(a.GetA(), b.GetA()), lerp(a.GetR(), b.GetR()), lerp(a.GetG(), b.GetG()), lerp(a.GetB(), b.GetB()));
+}
+
+void DrawAddButton(const DRAWITEMSTRUCT* item, float hoverT, bool pressed) {
+    Gdiplus::Graphics g(item->hDC);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
+    const float bw = static_cast<float>(item->rcItem.right - item->rcItem.left);
+    const float bh = static_cast<float>(item->rcItem.bottom - item->rcItem.top);
+    Gdiplus::SolidBrush corner(Gdiplus::Color(255, 96, 165, 250));
+    g.FillRectangle(&corner, 0.0f, 0.0f, bw, bh);
+
+    const float scale = 1.0f + 0.04f * hoverT - (pressed ? 0.05f : 0.0f);
+    const float rw = (bw - 4.0f) * scale;
+    const float rh = (bh - 4.0f) * scale;
+    const float rx = (bw - rw) / 2.0f;
+    const float ry = (bh - rh) / 2.0f;
+    ui::FillRoundRect(g, Gdiplus::RectF(rx, ry + 3.0f, rw, rh), 12.0f,
+        Gdiplus::Color(static_cast<BYTE>(40.0f + 60.0f * hoverT), 30, 58, 138));
+    const Gdiplus::Color c1 = pressed ? Gdiplus::Color(255, 25, 70, 200)
+        : Mix(Gdiplus::Color(255, 37, 99, 235), Gdiplus::Color(255, 29, 78, 216), hoverT);
+    const Gdiplus::Color c2 = Mix(Gdiplus::Color(255, 96, 165, 250), Gdiplus::Color(255, 80, 150, 246), hoverT);
+    FillGradientRoundRect(g, Gdiplus::RectF(rx, ry, rw, rh), 12.0f, c1, c2);
+
+    wchar_t text[128] = { 0 };
+    GetWindowTextW(item->hwndItem, text, 128);
+    ui::DrawUiText(g, text, Gdiplus::RectF(rx, ry, rw, rh), 14.0f, ui::palette::White(), true, true);
+}
+
+void UpdateAddHover() {
+    if (!gAddBtn || !IsWindowVisible(gAddBtn)) {
+        gAddHoverT = 0.0f;
+        return;
+    }
+    POINT pt;
+    GetCursorPos(&pt);
+    RECT r;
+    GetWindowRect(gAddBtn, &r);
+    const float target = PtInRect(&r, pt) ? 1.0f : 0.0f;
+    const float before = gAddHoverT;
+    gAddHoverT += (target - gAddHoverT) * 0.3f;
+    if (std::fabs(gAddHoverT - target) < 0.01f) gAddHoverT = target;
+    if (std::fabs(gAddHoverT - before) > 0.001f) InvalidateRect(gAddBtn, nullptr, FALSE);
+}
+
 void StartAnim() {
     gAnimStart = GetTickCount64();
     if (gMain) {
@@ -1654,6 +1704,11 @@ void CreateMainControls(HWND hwnd) {
 
     gToggle = CreateCtl(L"BUTTON", L"\u22EE", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_TOGGLE);
     gTitle = CreateCtl(L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, 0);
+    {
+        HFONT bold = CreateFontW(-17, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+        SendMessageW(gTitle, WM_SETFONT, reinterpret_cast<WPARAM>(bold), TRUE);
+    }
     gTopLabel = CreateCtl(L"STATIC", L"Etablissement", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, 0);
     gTopCycle = CreateCtl(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL, 0, 0, 0, 0, hwnd, ID_CYCLE);
     SendMessageW(gTopCycle, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"École"));
@@ -1677,8 +1732,8 @@ void CreateMainControls(HWND hwnd) {
     gContent = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL |
         ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 0, 0, 0, 0, hwnd, 0);
 
-    const wchar_t* actions[] = { L"+ Nouvel eleve", L"+ Nouvelle classe", L"+ Nouvelle demande", L"Parametres" };
-    for (int i = 0; i < 4; ++i) {
+    const wchar_t* actions[] = { L"+ Nouvel eleve", L"+ Nouvelle classe", L"+ Nouvelle demande" };
+    for (int i = 0; i < 3; ++i) {
         gActionBtns.push_back(CreateCtl(L"BUTTON", actions[i], WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
             0, 0, 0, 0, hwnd, ID_ACT_ELEVE + i));
     }
@@ -1800,6 +1855,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_CREATE:
         gMain = hwnd;
         CreateMainControls(hwnd);
+        SetTimer(hwnd, kHoverTimer, 30, nullptr);
         UpdateWindowTitle();
         LayoutMain(hwnd);
         RefreshContent();
@@ -1824,10 +1880,11 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         const float h = static_cast<float>(ch);
         g.DrawImage(gBackdrop, 0, 0);
 
-        Gdiplus::SolidBrush topbar(Gdiplus::Color(222, 255, 255, 255));
-        g.FillRectangle(&topbar, 0.0f, 0.0f, w, static_cast<float>(kTopbarHeight));
-        Gdiplus::Pen separator(ui::palette::Border());
-        g.DrawLine(&separator, 0.0f, static_cast<float>(kTopbarHeight), w, static_cast<float>(kTopbarHeight));
+        const Gdiplus::RectF bar(8.0f, 6.0f, w - 16.0f, 40.0f);
+        ui::FillRoundRect(g, Gdiplus::RectF(bar.X + 1.0f, bar.Y + 4.0f, bar.Width, bar.Height), 14.0f,
+            Gdiplus::Color(30, 30, 58, 138));
+        ui::FillRoundRect(g, bar, 14.0f, Gdiplus::Color(248, 255, 255, 255));
+        ui::StrokeRoundRect(g, bar, 14.0f, ui::palette::Border());
         if (gSidebarVisible) {
             Gdiplus::SolidBrush sidebar(ui::palette::Sidebar());
             g.FillRectangle(&sidebar, 0.0f, static_cast<float>(kTopbarHeight), static_cast<float>(kSidebarWidth),
@@ -1863,6 +1920,10 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
         if (item->CtlType != ODT_BUTTON) break;
+        if (item->CtlID == ID_ACT_NEW) {
+            DrawAddButton(item, gAddHoverT, (item->itemState & ODS_SELECTED) != 0);
+            return TRUE;
+        }
         const int id = static_cast<int>(item->CtlID);
         ui::ButtonKind kind = ui::ButtonKind::Secondary;
         if (id >= ID_MENU_BASE && id < ID_MENU_BASE + kPageCount) {
@@ -1938,6 +1999,10 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
     case WM_TIMER:
+        if (wParam == kHoverTimer) {
+            UpdateAddHover();
+            return 0;
+        }
         if (wParam == kAnimTimer) {
             if (GetTickCount64() - gAnimStart < kAnimMs) {
                 InvalidateRect(hwnd, nullptr, FALSE);
