@@ -713,6 +713,8 @@ bool RunLogin() {
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN, 0, nullptr, nullptr);
     if (!h) return false;
     ShowWindow(h, SW_SHOW);
+    InvalidateRect(h, nullptr, TRUE);
+    UpdateWindow(h);
     SetFocus(gLoginUser);
     PumpUntilClosed(h, ID_LOGIN, 0);
     return gLoggedIn;
@@ -811,10 +813,21 @@ wstring BuildPageText() {
     return ss.str();
 }
 
+void RedrawChrome() {
+    if (!gMain) return;
+    InvalidateRect(gMain, nullptr, TRUE);
+    for (HWND b : gMenuBtns) InvalidateRect(b, nullptr, TRUE);
+    for (HWND b : gActionBtns) InvalidateRect(b, nullptr, TRUE);
+    if (gLogout) InvalidateRect(gLogout, nullptr, TRUE);
+    if (gHome) InvalidateRect(gHome, nullptr, TRUE);
+    if (gToggle) InvalidateRect(gToggle, nullptr, TRUE);
+    if (gAdminBtn) InvalidateRect(gAdminBtn, nullptr, TRUE);
+}
+
 void RefreshContent() {
     SetWindowTextW(gTitle, PageLabel(gCurrentPage).c_str());
     SetWindowTextW(gContent, BuildPageText().c_str());
-    if (gMain) InvalidateRect(gMain, nullptr, TRUE);
+    RedrawChrome();
 }
 
 void UpdateWindowTitle() {
