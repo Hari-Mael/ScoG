@@ -759,7 +759,7 @@ LRESULT CALLBACK LoginProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         g.FillRectangle(&bg, 0.0f, 0.0f, w, h);
 
         Gdiplus::LinearGradientBrush panel(Gdiplus::RectF(0.0f, 0.0f, 320.0f, h),
-            Gdiplus::Color(255, 37, 99, 235), Gdiplus::Color(255, 30, 58, 138), Gdiplus::LinearGradientModeVertical);
+            Gdiplus::Color(255, 20, 45, 90), Gdiplus::Color(255, 30, 58, 138), Gdiplus::LinearGradientModeVertical);
         g.FillRectangle(&panel, 0.0f, 0.0f, 320.0f, h);
         Gdiplus::SolidBrush halo(Gdiplus::Color(40, 255, 255, 255));
         g.FillEllipse(&halo, 180.0f, -70.0f, 230.0f, 230.0f);
@@ -1217,8 +1217,19 @@ Gdiplus::Color StatusColor(const wstring& status) {
 
 void DrawStatusPill(Gdiplus::Graphics& g, float x, float y, const wstring& status, float a) {
     const Gdiplus::RectF r(x, y, 96.0f, 22.0f);
-    ui::FillRoundRect(g, r, 11.0f, Fade(StatusColor(status), a));
-    ui::DrawUiText(g, status.c_str(), r, 12.0f, Fade(ui::palette::White(), a), false, true);
+    const Gdiplus::Color c = StatusColor(status);
+    ui::FillRoundRect(g, r, 11.0f, Fade(Gdiplus::Color(255, c.GetR(), c.GetG(), c.GetB()), a * 0.18f));
+    const Gdiplus::Color text(255, static_cast<BYTE>(c.GetR() * 6 / 10), static_cast<BYTE>(c.GetG() * 6 / 10),
+        static_cast<BYTE>(c.GetB() * 6 / 10));
+    ui::DrawUiText(g, status.c_str(), r, 12.0f, Fade(text, a), false, true);
+}
+
+void DrawActionPill(Gdiplus::Graphics& g, float x, float y, float w, float h, const wchar_t* text,
+                    const Gdiplus::Color& fill, const Gdiplus::Color& border, const Gdiplus::Color& textColor, float a) {
+    const Gdiplus::RectF r(x, y, w, h);
+    ui::FillRoundRect(g, r, h / 2.0f, Fade(fill, a));
+    ui::StrokeRoundRect(g, r, h / 2.0f, Fade(border, a), 1.0f);
+    ui::DrawUiText(g, text, r, 12.0f, Fade(textColor, a), false, true);
 }
 
 void TableGeometry(const vector<TableColumn>& cols, float x, float w, vector<float>& xs, vector<float>& widths) {
@@ -1250,8 +1261,10 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
     const float headerH = 40.0f;
     const float rowH = 38.0f;
     for (size_t i = 0; i < cols.size(); ++i) {
-        ui::DrawUiText(g, cols[i].title.c_str(), Gdiplus::RectF(xs[i], y + 10.0f, widths[i] - 8.0f, 22.0f),
-            13.0f, Fade(ui::palette::TextMuted(), frameA), true);
+        wstring head = cols[i].title;
+        for (auto& ch : head) ch = static_cast<wchar_t>(towupper(ch));
+        ui::DrawUiText(g, head.c_str(), Gdiplus::RectF(xs[i], y + 10.0f, widths[i] - 8.0f, 22.0f),
+            11.0f, Fade(ui::palette::TextMuted(), frameA), true);
     }
     Gdiplus::Pen headerLine(Fade(ui::palette::Border(), frameA));
     g.DrawLine(&headerLine, x + 16.0f, y + headerH, x + w - 16.0f, y + headerH);
@@ -1291,9 +1304,14 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
         }
         const float ax = xs[actionCol];
         const float ay = rowY + 6.0f;
-        ui::DrawUiText(g, L"Voir", Gdiplus::RectF(ax, ay, 50.0f, rowH - 10.0f), 13.0f, Fade(ui::palette::Accent(), ra));
-        ui::DrawUiText(g, L"Modifier", Gdiplus::RectF(ax + 56.0f, ay, 70.0f, rowH - 10.0f), 13.0f, Fade(ui::palette::Accent(), ra));
-        ui::DrawUiText(g, L"Supprimer", Gdiplus::RectF(ax + 130.0f, ay, 100.0f, rowH - 10.0f), 13.0f, Fade(ui::palette::Danger(), ra));
+        const float py = rowY + 7.0f;
+        const float ph = rowH - 14.0f;
+        DrawActionPill(g, ax, py, 56.0f, ph, L"Voir", Gdiplus::Color(255, 255, 255, 255),
+            ui::palette::Accent(), ui::palette::Accent(), ra);
+        DrawActionPill(g, ax + 62.0f, py, 66.0f, ph, L"Modifier", ui::palette::Accent(),
+            ui::palette::Accent(), Gdiplus::Color(255, 255, 255, 255), ra);
+        DrawActionPill(g, ax + 134.0f, py, 74.0f, ph, L"Supprimer", Gdiplus::Color(255, 254, 242, 242),
+            ui::palette::Danger(), ui::palette::Danger(), ra);
     }
     if (overflow) {
         const wstring more = L"+ " + to_wstring(rows.size() - shown) + L" autre(s) ligne(s)";
@@ -1318,17 +1336,25 @@ void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom
     const wstring title = PageLabel(gCurrentPage);
     const wstring count = to_wstring(view.rows.size()) + L" element(s) - Cycle : " + CycleLabel(gCycle);
     FillGradientRoundRect(g, Gdiplus::RectF(x, y, w, 72.0f), 14.0f,
-        Fade(Gdiplus::Color(255, 37, 99, 235), bandA), Fade(Gdiplus::Color(255, 96, 165, 250), bandA));
-    ui::DrawUiText(g, title.c_str(), Gdiplus::RectF(x + 24.0f, y + 12.0f, w - 240.0f, 30.0f),
+        Fade(Gdiplus::Color(255, 20, 45, 90), bandA), Fade(Gdiplus::Color(255, 37, 80, 150), bandA));
+    wstring eyebrow = gS.ecole.empty() ? wstring(L"Gestion scolaire") : gS.ecole;
+    for (auto& ch : eyebrow) ch = static_cast<wchar_t>(towupper(ch));
+    ui::DrawUiText(g, eyebrow.c_str(), Gdiplus::RectF(x + 24.0f, y + 8.0f, w - 240.0f, 14.0f),
+        10.0f, Fade(Gdiplus::Color(255, 150, 190, 240), bandA), true);
+    ui::DrawUiText(g, title.c_str(), Gdiplus::RectF(x + 24.0f, y + 22.0f, w - 240.0f, 30.0f),
         22.0f, Fade(ui::palette::White(), bandA), true);
-    ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + 24.0f, y + 42.0f, w - 240.0f, 20.0f),
-        14.0f, Fade(Gdiplus::Color(255, 240, 232, 255), bandA));
+    ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + 24.0f, y + 50.0f, w - 240.0f, 18.0f),
+        13.0f, Fade(Gdiplus::Color(255, 190, 210, 240), bandA));
 
     const float filterY = y + 84.0f;
     ui::FillRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(Gdiplus::Color(255, 255, 255, 255), filterA * 0.7f));
     ui::StrokeRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(ui::palette::Border(), filterA), 1.5f);
 
     const float tableY = filterY + 56.0f;
+    ui::FillRoundRect(g, Gdiplus::RectF(x + 14.0f, filterY + 8.0f, w * 0.4f + 4.0f, 28.0f), 14.0f,
+        Gdiplus::Color(255, 255, 255, 255));
+    ui::StrokeRoundRect(g, Gdiplus::RectF(x + 14.0f, filterY + 8.0f, w * 0.4f + 4.0f, 28.0f), 14.0f,
+        Fade(ui::palette::Border(), filterA), 1.0f);
     const wstring emptyText = gQuery.empty() ? L"Aucune donnee pour ce module." : L"Aucun resultat pour cette recherche.";
     DrawDataTable(g, x, tableY, w, static_cast<float>(bottom) - tableY, view.cols, view.rows, statusCol, now, emptyText);
 }
@@ -1359,7 +1385,7 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width, ULONGLONG
         ? wstring(L"Configurez l'etablissement dans Parametres.")
         : gS.ecole;
     FillGradientRoundRect(g, Gdiplus::RectF(x, y, w, 96.0f), 16.0f,
-        Fade(Gdiplus::Color(255, 37, 99, 235), headerA), Fade(Gdiplus::Color(255, 96, 165, 250), headerA));
+        Fade(Gdiplus::Color(255, 20, 45, 90), headerA), Fade(Gdiplus::Color(255, 37, 80, 150), headerA));
     ui::DrawUiText(g, L"Tableau de bord", Gdiplus::RectF(x + 24.0f, y + 16.0f, w - 48.0f, 32.0f),
         22.0f, Fade(ui::palette::White(), headerA), true);
     ui::DrawUiText(g, subtitle.c_str(), Gdiplus::RectF(x + 24.0f, y + 52.0f, w - 48.0f, 22.0f),
@@ -1423,7 +1449,7 @@ void DrawDashboard(Gdiplus::Graphics& g, int left, int top, int width, ULONGLONG
         const float bw = barMaxW * static_cast<float>(count) / static_cast<float>(maxCount) * a;
         if (bw > 1.0f) {
             FillGradientRoundRect(g, Gdiplus::RectF(barX, rowY + 10.0f, bw, 8.0f), 4.0f,
-                Fade(Gdiplus::Color(255, 37, 99, 235), listA), Fade(Gdiplus::Color(255, 96, 165, 250), listA));
+                Fade(Gdiplus::Color(255, 20, 45, 90), listA), Fade(Gdiplus::Color(255, 37, 80, 150), listA));
         }
         const wstring countText = to_wstring(count) + L" eleve(s)";
         ui::DrawUiText(g, countText.c_str(), Gdiplus::RectF(barX + barMaxW + 10.0f, rowY, 110.0f, rowH),
@@ -1444,7 +1470,7 @@ void DrawAddButton(const DRAWITEMSTRUCT* item, float hoverT, bool pressed) {
     g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
     const float bw = static_cast<float>(item->rcItem.right - item->rcItem.left);
     const float bh = static_cast<float>(item->rcItem.bottom - item->rcItem.top);
-    Gdiplus::SolidBrush corner(Gdiplus::Color(255, 96, 165, 250));
+    Gdiplus::SolidBrush corner(Gdiplus::Color(255, 37, 80, 150));
     g.FillRectangle(&corner, 0.0f, 0.0f, bw, bh);
 
     const float scale = 1.0f + 0.04f * hoverT - (pressed ? 0.05f : 0.0f);
@@ -1454,14 +1480,14 @@ void DrawAddButton(const DRAWITEMSTRUCT* item, float hoverT, bool pressed) {
     const float ry = (bh - rh) / 2.0f;
     ui::FillRoundRect(g, Gdiplus::RectF(rx, ry + 3.0f, rw, rh), 12.0f,
         Gdiplus::Color(static_cast<BYTE>(40.0f + 60.0f * hoverT), 30, 58, 138));
-    const Gdiplus::Color c1 = pressed ? Gdiplus::Color(255, 25, 70, 200)
-        : Mix(Gdiplus::Color(255, 37, 99, 235), Gdiplus::Color(255, 29, 78, 216), hoverT);
-    const Gdiplus::Color c2 = Mix(Gdiplus::Color(255, 96, 165, 250), Gdiplus::Color(255, 80, 150, 246), hoverT);
+    const Gdiplus::Color c1 = pressed ? Gdiplus::Color(255, 220, 230, 245)
+        : Mix(Gdiplus::Color(255, 255, 255, 255), Gdiplus::Color(255, 236, 242, 250), hoverT);
+    const Gdiplus::Color c2 = Mix(Gdiplus::Color(255, 255, 255, 255), Gdiplus::Color(255, 226, 236, 248), hoverT);
     FillGradientRoundRect(g, Gdiplus::RectF(rx, ry, rw, rh), 12.0f, c1, c2);
 
     wchar_t text[128] = { 0 };
     GetWindowTextW(item->hwndItem, text, 128);
-    ui::DrawUiText(g, text, Gdiplus::RectF(rx, ry, rw, rh), 14.0f, ui::palette::White(), true, true);
+    ui::DrawUiText(g, text, Gdiplus::RectF(rx, ry, rw, rh), 14.0f, Gdiplus::Color(255, 15, 40, 80), true, true);
 }
 
 void UpdateAddHover() {
@@ -1758,7 +1784,8 @@ void CreateMainControls(HWND hwnd) {
     }
     gLogout = CreateCtl(L"BUTTON", L"Deconnexion", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_LOGOUT);
 
-    gSearch = CreateCtl(L"EDIT", L"", WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, ID_SEARCH);
+    gSearch = CreateCtl(L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, ID_SEARCH);
+    SendMessageW(gSearch, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"Rechercher..."));
     gAddBtn = CreateCtl(L"BUTTON", L"", WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_ACT_NEW);
 
     gContent = CreateCtl(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL |
@@ -1991,7 +2018,9 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (gSidebarVisible) {
             for (const auto& s : gSections) {
                 const float ty = static_cast<float>(s.y + 4);
-                ui::DrawUiText(g, s.text.c_str(), Gdiplus::RectF(18.0f, ty, 180.0f, 18.0f),
+                wstring up = s.text;
+                for (auto& ch : up) ch = static_cast<wchar_t>(towupper(ch));
+                ui::DrawUiText(g, up.c_str(), Gdiplus::RectF(18.0f, ty, 180.0f, 18.0f),
                     11.0f, Gdiplus::Color(255, 148, 163, 184), true);
                 ui::DrawUiText(g, gSectionOpen[s.sec] ? L"\u25BE" : L"\u25B8",
                     Gdiplus::RectF(static_cast<float>(kSidebarWidth - 34), ty, 20.0f, 18.0f),
@@ -2112,15 +2141,15 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         TableGeometry(view.cols, static_cast<float>(left), static_cast<float>(rc.right - left - kMargin), xs, widths);
         const float ax = xs.back();
         const float fx = static_cast<float>(mx);
-        if (fx < ax || fx > ax + 230.0f) return 0;
+        if (fx < ax || fx > ax + 210.0f) return 0;
         const RowView row = view.rows[static_cast<size_t>(index)];
-        if (gCurrentPage == L"parametres" && fx >= ax + 56.0f && fx < ax + 128.0f) {
+        if (gCurrentPage == L"parametres" && fx >= ax + 62.0f && fx < ax + 128.0f) {
             OpenParams(hwnd);
             return 0;
         }
-        if (fx < ax + 52.0f) {
+        if (fx < ax + 58.0f) {
             ShowDetails(hwnd, gCurrentPage, row);
-        } else if (fx < ax + 128.0f) {
+        } else if (fx < ax + 130.0f) {
             if (!row.editable) ShowWarning(hwnd, L"Element calcule automatiquement : modifiez-le depuis son module d'origine.");
             else EditRecordFlow(hwnd, gCurrentPage, row);
         } else {
