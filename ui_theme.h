@@ -98,6 +98,7 @@ inline void DrawButton(const DRAWITEMSTRUCT* item, ButtonKind kind) {
     Color background = palette::Card();
     Color foreground = palette::TextMain();
     bool bordered = false;
+    const bool nav = (kind == ButtonKind::Nav || kind == ButtonKind::NavActive);
 
     switch (kind) {
     case ButtonKind::Primary:   background = palette::Accent();  foreground = palette::White(); break;
@@ -114,7 +115,12 @@ inline void DrawButton(const DRAWITEMSTRUCT* item, ButtonKind kind) {
 
     wchar_t text[256] = {0};
     GetWindowTextW(item->hwndItem, text, 256);
-    DrawUiText(g, text, r, 14.0f, foreground, false, true);
+    RectF textRect = r;
+    if (nav) {
+        textRect.X += 16.0f;
+        textRect.Width -= 16.0f;
+    }
+    DrawUiText(g, text, textRect, 14.0f, foreground, false, !nav);
 }
 
 }  // namespace ui
