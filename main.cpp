@@ -1036,6 +1036,8 @@ void BuildBackdrop(int w, int h) {
     gBackdropH = h;
 }
 
+constexpr int kListFirstRowY = 326;
+
 bool IsDataPage() {
     return gCurrentPage != L"dashboard";
 }
@@ -1293,11 +1295,19 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
             Gdiplus::SolidBrush alt(Fade(Gdiplus::Color(255, 248, 250, 253), ra));
             g.FillRectangle(&alt, x + 1.0f, rowY, w - 2.0f, rowH);
         }
+        const bool twoLine = actionCol > 2;
         for (size_t i = 0; i < actionCol; ++i) {
+            if (twoLine && i == 1) continue;
             const Gdiplus::RectF cell(xs[i], rowY + 6.0f, widths[i] - 8.0f, rowH - 10.0f);
             const wstring text = i < rows[r].cells.size() ? rows[r].cells[i] : wstring();
             if (static_cast<int>(i) == statusCol) {
                 DrawStatusPill(g, xs[i], rowY + 8.0f, text, ra);
+            } else if (twoLine && i == 0) {
+                ui::DrawUiText(g, text.c_str(), Gdiplus::RectF(xs[i], rowY + 4.0f, widths[i] - 8.0f, 18.0f),
+                    13.0f, Fade(ui::palette::TextMain(), ra), true);
+                const wstring sub = rows[r].cells.size() > 1 ? rows[r].cells[1] : wstring();
+                ui::DrawUiText(g, sub.c_str(), Gdiplus::RectF(xs[i], rowY + 20.0f, widths[i] - 8.0f, 16.0f),
+                    11.0f, Fade(ui::palette::TextMuted(), ra));
             } else {
                 ui::DrawUiText(g, text.c_str(), cell, 13.0f, Fade(ui::palette::TextMain(), ra));
             }
@@ -1320,12 +1330,41 @@ void DrawDataTable(Gdiplus::Graphics& g, float x, float y, float w, float h,
     }
 }
 
+void DrawListKpis(Gdiplus::Graphics& g, float x, float y, float w, ULONGLONG now,
+                  size_t total, size_t shown, size_t saisis, size_t calcules) {
+    const float gap = 14.0f;
+    const float cw = (w - 3.0f * gap) / 4.0f;
+    const float ch = 74.0f;
+    const wchar_t* labels[4] = { L"Total", L"Affiches", L"Saisis", L"Calcules" };
+    const size_t values[4] = { total, shown, saisis, calcules };
+    const Gdiplus::Color accents[4] = { ui::palette::Accent(), ui::palette::Success(), ui::palette::Warning(), ui::palette::Danger() };
+    for (int i = 0; i < 4; ++i) {
+        const float a = Stage(now, 80.0f + static_cast<float>(i) * 90.0f, 420.0f);
+        if (a <= 0.0f) continue;
+        const Gdiplus::RectF r(x + static_cast<float>(i) * (cw + gap), y + (1.0f - a) * 16.0f, cw, ch);
+        ui::FillRoundRect(g, Gdiplus::RectF(r.X + 2.0f, r.Y + 4.0f, r.Width, r.Height), 14.0f,
+            Fade(Gdiplus::Color(255, 20, 45, 90), a * 0.10f));
+        ui::FillRoundRect(g, r, 14.0f, Fade(Gdiplus::Color(255, 255, 255, 255), a * 0.92f));
+        ui::StrokeRoundRect(g, r, 14.0f, Fade(ui::palette::Border(), a), 1.0f);
+        ui::FillRoundRect(g, Gdiplus::RectF(r.X + r.Width - 32.0f, r.Y + 14.0f, 18.0f, 18.0f), 9.0f, Fade(accents[i], a));
+        ui::DrawUiText(g, labels[i], Gdiplus::RectF(r.X + 14.0f, r.Y + 12.0f, r.Width - 50.0f, 18.0f),
+            12.0f, Fade(ui::palette::TextMuted(), a));
+        const wstring num = to_wstring(values[i]);
+        ui::DrawUiText(g, num.c_str(), Gdiplus::RectF(r.X + 14.0f, r.Y + 32.0f, r.Width - 28.0f, 32.0f),
+            24.0f, Fade(ui::palette::TextMain(), a), true);
+    }
+}
+
 void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom, ULONGLONG now) {
     const float x = static_cast<float>(left);
     const float y = static_cast<float>(top);
     const float w = static_cast<float>(width);
 
     const View view = BuildView(gCurrentPage, gQuery);
+    const vector<RowView> allRows = ModuleRows(gCurrentPage);
+    size_t saisis = 0;
+    for (const auto& r : allRows) if (r.editable) ++saisis;
+    DrawListKpis(g, x, y + 84.0f, w, now, allRows.size(), view.rows.size(), saisis, allRows.size() - saisis);
     int statusCol = -1;
     for (size_t i = 0; i < view.cols.size(); ++i) {
         if (view.cols[i].title == L"Statut") statusCol = static_cast<int>(i);
@@ -1346,7 +1385,7 @@ void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom
     ui::DrawUiText(g, count.c_str(), Gdiplus::RectF(x + 24.0f, y + 50.0f, w - 240.0f, 18.0f),
         13.0f, Fade(Gdiplus::Color(255, 190, 210, 240), bandA));
 
-    const float filterY = y + 84.0f;
+    const float filterY = y + 170.0f;
     ui::FillRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(Gdiplus::Color(255, 255, 255, 255), filterA * 0.7f));
     ui::StrokeRoundRect(g, Gdiplus::RectF(x, filterY, w, 44.0f), 10.0f, Fade(ui::palette::Border(), filterA), 1.5f);
 
@@ -1355,6 +1394,8 @@ void DrawDataPage(Gdiplus::Graphics& g, int left, int top, int width, int bottom
         Gdiplus::Color(255, 255, 255, 255));
     ui::StrokeRoundRect(g, Gdiplus::RectF(x + 14.0f, filterY + 8.0f, w * 0.4f + 4.0f, 28.0f), 14.0f,
         Fade(ui::palette::Border(), filterA), 1.0f);
+    DrawActionPill(g, x + w - 150.0f, filterY + 9.0f, 130.0f, 26.0f, L"R\u00E9initialiser",
+        Gdiplus::Color(255, 255, 255, 255), ui::palette::Accent(), ui::palette::Accent(), filterA);
     const wstring emptyText = gQuery.empty() ? L"Aucune donnee pour ce module." : L"Aucun resultat pour cette recherche.";
     DrawDataTable(g, x, tableY, w, static_cast<float>(bottom) - tableY, view.cols, view.rows, statusCol, now, emptyText);
 }
@@ -1906,7 +1947,7 @@ void LayoutMain(HWND hwnd) {
         MoveWindow(gAddBtn, width - kMargin - 190, kTopbarHeight + 28, 180, 32, TRUE);
         HRGN addShape = CreateRoundRectRgn(0, 0, 181, 33, 26, 26);
         SetWindowRgn(gAddBtn, addShape, TRUE);
-        MoveWindow(gSearch, left + 16, kTopbarHeight + 8 + 84 + 10,
+        MoveWindow(gSearch, left + 16, 236,
             static_cast<int>((width - left - kMargin - 32) * 0.4f), 24, TRUE);
     }
     InvalidateRect(hwnd, nullptr, TRUE);
@@ -2091,7 +2132,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
             RECT rc;
             GetClientRect(hwnd, &rc);
-            const int firstRow = kTopbarHeight + 8 + 84 + 56 + 40 + 4;
+            const int firstRow = kListFirstRowY;
             if (mx >= left && mx <= rc.right - kMargin && my >= firstRow && my < rc.bottom - 44 - kMargin) {
                 row = (my - firstRow) / 38;
             }
@@ -2131,7 +2172,13 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         RECT rc;
         GetClientRect(hwnd, &rc);
         const int left = gSidebarVisible ? kSidebarWidth + kMargin : kMargin;
-        const int firstRow = kTopbarHeight + 8 + 84 + 56 + 40 + 4;
+        const int firstRow = kListFirstRowY;
+        if (mx >= rc.right - kMargin - 150 && mx <= rc.right - kMargin - 20 && my >= 235 && my <= 261) {
+            SetWindowTextW(gSearch, L"");
+            gQuery.clear();
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
         if (mx < left || mx > rc.right - kMargin || my < firstRow || my >= rc.bottom - 44 - kMargin) return 0;
         const int index = (my - firstRow) / 38;
         const View view = BuildView(gCurrentPage, gQuery);
